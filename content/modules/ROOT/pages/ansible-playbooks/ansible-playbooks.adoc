@@ -38,7 +38,7 @@ From your bastion, clone the repository:
 [source,bash,role=execute,subs=attributes]
 ----
 # Clone the repository
-git clone https://github.com/rh-osp-demo/showroom_osp-on-ocp-day2.git labrepo
+git clone https://github.com/RedHatQuickCourses/vmware-to-rhoso labrepo
 cd labrepo/ansible-playbooks
 
 # Copy and configure inventory

@@ -2,6 +2,17 @@
 
 == Credentials for Ansible Automation Platform
 
+Your OpenShift cluster console is available {openshift_cluster_console_url}[here^].
+
+Your local admin login is available with the following credentials:
+
+* *User:* `{openshift_cluster_admin_username}`
+* *Password:* `{openshift_cluster_admin_password}`
+
+You will then be presented with a login screen where you can copy/paste your credentials.
+
+image::module-01-day-to-day/01-openshift_login.png[title="OpenShift Login", link=self, window=blank, width=100%]
+
 Your Ansible Automation Platform console is available {aap_controller_web_url}[here^].
 
 Your admin login is available with the following credentials:
@@ -11,4 +22,20 @@ Your admin login is available with the following credentials:
 
 image::02-aap_login.png[title="AAP Login", link=self, window=blank, width=100%]
 
-Use this opportunity to open and log into AAP consoles to prepare for the next section of the lab.
+Use this opportunity to open and log into both consoles to prepare for the lab.
+
+== Enable Automation Hub
+
+In this environment, the Automation Hub is disabled by default. We need to enable it to be able to build the execution environment and push it to the AAP's internal registry.
+
+[source,bash,role=execute]
+----
+oc patch ansibleautomationplatform aap -n aap --type=merge -p '
+spec:
+  hub:
+    disabled: false
+    storage_type: file
+    file_storage_class: nfs
+    file_storage_capacity: 10Gi
+'
+----

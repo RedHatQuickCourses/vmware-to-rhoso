@@ -205,7 +205,6 @@ Get the default route hostname
 [source,bash,role=execute,subs=attributes]
 ----
 REG_ROUTE=$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}')
-PROJECT=aap
 ----
 
 In the OpenShift web console: click your username (top right) → Copy login command → Display Token → copy the oc login command. Paste the command into the bastion and execute it.
@@ -221,13 +220,13 @@ podman login $REG_ROUTE \
 Tag the execution environment:
 [source,bash,role=execute,subs=attributes]
 ----
-podman tag rhospvmt-ee:latest $REG_ROUTE/$PROJECT/rhospvmt-ee:latest
+podman tag rhospvmt-ee:latest $REG_ROUTE/aap/rhospvmt-ee:latest
 ----
 
 Push the execution environment to the OCP container registry:
 [source,bash,role=execute,subs=attributes]
 ----
-podman push --tls-verify=false $REG_ROUTE/$PROJECT/rhospvmt-ee:latest
+podman push --tls-verify=false $REG_ROUTE/aap/rhospvmt-ee:latest
 ----
 
 Your execution environment URL is:
@@ -235,3 +234,36 @@ Your execution environment URL is:
 ----
 default-route-openshift-image-registry.apps.cluster-{guid}.dynamic.redhatworkshops.io/aap/rhospvmt-ee:latest
 ----
+
+=== Using AAP UI to Create Execution Environment
+
+After pushing your execution environment to the AAP registry, you can easily configure it for use in the controller through the AAP web interface.
+
+==== Step 1: Access Automation Content
+
+. Log into your AAP web interface
+. Navigate to *Automation Content* → *Execution Environments*
+. You should see your pushed execution environment listed (e.g., `rhospvmt-ee`)
+
+==== Step 2: Use in Controller
+
+. Locate your execution environment in the list
+. Click the *three vertical dots* (⋮) menu next to your execution environment
+. Select *Use in Controller*
+. You will be redirected to the execution environment creation page with the following fields:
+  ** *Name*: VMware Migration toolkit execution environment
+  ** *Image*: This field is pre-filled with your pushed EE image path
+  ** *Description*: Optional description field
+. Click *Create Execution Environment* to complete the configuration
+
+==== Step 3: Verify Configuration
+
+After clicking "Create Execution Environment":
+
+. You will be automatically redirected to *Automation Execution* → *Infrastructure* → *Execution Environments*.
+. Verify your execution environment appears in the list with:
+  ** *Name*: VMware Migration toolkit execution environment
+  ** *Image*: Full registry path to your pushed image
+  ** *Status*: Should show as available
+
+The execution environment is now available in the AAP controller and can be used to run migration playbooks.

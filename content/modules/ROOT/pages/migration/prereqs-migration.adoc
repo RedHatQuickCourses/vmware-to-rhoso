@@ -29,14 +29,12 @@ To transfer virtual machine data efficiently, the migration process utilizes a s
 
 In the bastion:
 
-. Navigate to access.redhat.com
+. Navigate to https://access.redhat.com/downloads/content/rhel
 . Click on Downloads
 . Click on RHEL
 . Scroll-down to Red Hat Enterprise Linux 9.6 (or latest) KVM Guest Image
-. Right click on "Download Now button"
-. Go back to your bastion node
-
-Download the latest RHEL qcow2 image from access.redhat.com.
+. Right click on "Download" and copy the URL
+. Go back to your bastion node and paste the URL into the following command:
 
 [source,bash,role=execute]
 ----

@@ -1,0 +1,260 @@
+---
+# Prerequisites using kubernetes modules (preferred approach)
+
+- name: Create NMState operator namespace
+  kubernetes.core.k8s:
+    name: openshift-nmstate
+    api_version: v1
+    kind: Namespace
+    state: present
+    definition:
+      metadata:
+        labels:
+          kubernetes.io/metadata.name: openshift-nmstate
+          name: openshift-nmstate
+      spec:
+        finalizers:
+          - kubernetes
+
+- name: Create NMState OperatorGroup
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        annotations:
+          olm.providedAPIs: NMState.v1.nmstate.io
+        name: openshift-nmstate
+        namespace: openshift-nmstate
+      spec:
+        targetNamespaces:
+          - openshift-nmstate
+
+- name: Verify NMState OperatorGroup is created
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: openshift-nmstate
+  register: nmstate_operatorgroup
+  until: nmstate_operatorgroup.resources | length > 0
+  retries: 10
+  delay: 5
+
+- name: Create NMState Subscription
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        labels:
+          operators.coreos.com/kubernetes-nmstate-operator.openshift-nmstate: ""
+        name: kubernetes-nmstate-operator
+        namespace: openshift-nmstate
+      spec:
+        channel: stable
+        installPlanApproval: Automatic
+        name: kubernetes-nmstate-operator
+        source: redhat-operators
+        sourceNamespace: openshift-marketplace
+
+- name: Wait for NMState operator to be ready
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: openshift-nmstate
+  register: nmstate_csv
+  until: >
+    nmstate_csv.resources | length > 0 and
+    nmstate_csv.resources[0].status is defined and
+    nmstate_csv.resources[0].status.phase is defined and
+    nmstate_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+
+- name: Wait for NMState CRD to be available
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: nmstates.nmstate.io
+  register: nmstate_crd
+  until: nmstate_crd.resources | length > 0
+  retries: 30
+  delay: 10
+
+- name: Create NMState instance
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: nmstate.io/v1
+      kind: NMState
+      metadata:
+        name: nmstate
+  retries: 5
+  delay: 10
+
+- name: Verify NMState instance is created
+  kubernetes.core.k8s_info:
+    api_version: nmstate.io/v1
+    kind: NMState
+    name: nmstate
+  register: nmstate_instance
+  until: nmstate_instance.resources | length > 0
+  retries: 10
+  delay: 5
+
+- name: Create MetalLB operator namespace
+  kubernetes.core.k8s:
+    name: metallb-system
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Create MetalLB OperatorGroup
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: metallb-operator
+        namespace: metallb-system
+
+- name: Verify MetalLB OperatorGroup is created
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    namespace: metallb-system
+  register: metallb_operatorgroup
+  until: metallb_operatorgroup.resources | length > 0
+  retries: 10
+  delay: 5
+
+- name: Create MetalLB Subscription
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: metallb-operator-sub
+        namespace: metallb-system
+      spec:
+        channel: stable
+        name: metallb-operator
+        source: redhat-operators
+        sourceNamespace: openshift-marketplace
+
+- name: Wait for MetalLB operator to be ready
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: metallb-system
+  register: metallb_csv
+  until: >
+    metallb_csv.resources | length > 0 and
+    metallb_csv.resources[0].status is defined and
+    metallb_csv.resources[0].status.phase is defined and
+    metallb_csv.resources[0].status.phase == "Succeeded"
+  retries: 60
+  delay: 10
+
+- name: Wait for MetalLB CRD to be available
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: metallbs.metallb.io
+  register: metallb_crd
+  until: metallb_crd.resources | length > 0
+  retries: 30
+  delay: 10
+
+- name: Wait for MetalLB webhook service to have endpoints
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Endpoints
+    name: metallb-operator-controller-manager-service
+    namespace: metallb-system
+  register: metallb_webhook_endpoints
+  until: >
+    metallb_webhook_endpoints.resources | length > 0 and
+    metallb_webhook_endpoints.resources[0].subsets is defined and
+    metallb_webhook_endpoints.resources[0].subsets | length > 0 and
+    metallb_webhook_endpoints.resources[0].subsets[0].addresses is defined and
+    metallb_webhook_endpoints.resources[0].subsets[0].addresses | length > 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Create MetalLB instance
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: metallb.io/v1beta1
+      kind: MetalLB
+      metadata:
+        name: metallb
+        namespace: metallb-system
+      spec:
+        nodeSelector:
+          node-role.kubernetes.io/worker: ""
+  retries: 5
+  delay: 10
+
+- name: Verify MetalLB instance is created
+  kubernetes.core.k8s_info:
+    api_version: metallb.io/v1beta1
+    kind: MetalLB
+    name: metallb
+    namespace: metallb-system
+  register: metallb_instance
+  until: metallb_instance.resources | length > 0
+  retries: 10
+  delay: 5
+
+- name: Wait for MetalLB controller deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: controller
+    namespace: metallb-system
+  register: metallb_controller
+  until: >
+    metallb_controller.resources | length > 0 and
+    metallb_controller.resources[0].status.readyReplicas is defined and
+    metallb_controller.resources[0].status.readyReplicas >= 1
+  retries: 30
+  delay: 10
+
+- name: Wait for MetalLB speaker daemonset to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: DaemonSet
+    name: speaker
+    namespace: metallb-system
+  register: metallb_speaker
+  until: >
+    metallb_speaker.resources | length > 0 and
+    metallb_speaker.resources[0].status.numberReady is defined and
+    metallb_speaker.resources[0].status.numberReady > 0
+  retries: 30
+  delay: 10
+
+- name: Verify cert-manager is installed and running
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: cert-manager
+  register: cert_manager_pods
+  until: cert_manager_pods.resources | length > 0
+  retries: 30
+  delay: 10
+
+- name: Count running cert-manager pods
+  set_fact:
+    running_cert_manager_pods: "{{ cert_manager_pods.resources | json_query('[?status.phase==`Running`]') | length }}"
+
+- name: Display cert-manager status
+  debug:
+    msg: "cert-manager pods: {{ running_cert_manager_pods }} running out of {{ cert_manager_pods.resources | length }} total"

@@ -1,0 +1,83 @@
+---
+# Validation and Access role - Based on access.adoc documentation
+
+- name: Configure bastion external network interface
+  ansible.builtin.command:
+    cmd: nmcli con add con-name "static-eth1" ifname eth1 type ethernet ip4 {{ rhoso_external_ip_bastion | default('172.21.0.50') }}/16
+  become: true
+  vars:
+    rhoso_external_ip_bastion: "{{ hostvars[inventory_hostname].get('rhoso_external_ip_bastion', '172.21.0.50') }}"
+  register: nmcli_bastion_result
+  changed_when: "'Connection successfully added' in (nmcli_bastion_result.stdout | default('')) or 'Connection successfully added' in (nmcli_bastion_result.stderr | default(''))"
+  failed_when: "nmcli_bastion_result.rc != 0 and 'already exists' not in (nmcli_bastion_result.stderr | default(''))"
+
+- name: Activate bastion external network connection
+  ansible.builtin.command:
+    cmd: nmcli con up "static-eth1"
+  become: true
+  changed_when: true
+
+- name: Get OpenStack client pod name
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ openstack_namespace }}"
+    label_selectors:
+      - "service=openstackclient"
+  register: openstackclient_pods
+
+- name: Verify OpenStack compute services
+  kubernetes.core.k8s_exec:
+    namespace: "{{ openstack_namespace }}"
+    pod: "{{ openstackclient_pods.resources[0].metadata.name }}"
+    command: openstack compute service list
+  register: compute_services
+  when: openstackclient_pods.resources | length > 0
+
+- name: Display OpenStack compute services
+  debug:
+    var: compute_services.stdout_lines
+  when: compute_services is defined
+
+- name: Verify OpenStack network agents
+  kubernetes.core.k8s_exec:
+    namespace: "{{ openstack_namespace }}"
+    pod: "{{ openstackclient_pods.resources[0].metadata.name }}"
+    command: openstack network agent list
+  register: network_agents
+  when: openstackclient_pods.resources | length > 0
+
+- name: Display OpenStack network agents
+  debug:
+    var: network_agents.stdout_lines
+  when: network_agents is defined
+
+
+- name: Verify control plane services are running
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ openstack_namespace }}"
+    label_selectors:
+      - "service in (keystone, nova, neutron, glance, cinder, horizon)"
+  register: control_plane_pods
+
+- name: Display control plane pod status
+  debug:
+    msg: "{{ item.metadata.name }}: {{ item.status.phase }}"
+  loop: "{{ control_plane_pods.resources }}"
+  when: control_plane_pods.resources | length > 0
+
+- name: Count running control plane pods
+  set_fact:
+    running_cp_pods: "{{ control_plane_pods.resources | json_query('[?status.phase==`Running`]') | length }}"
+  when: control_plane_pods.resources | length > 0
+
+- name: Summary of deployment status
+  debug:
+    msg:
+      - "=== RHOSO Deployment Summary ==="
+      - "Control plane pods running: {{ running_cp_pods | default(0) }}"
+      - "Total control plane pods: {{ control_plane_pods.resources | length }}"
+      - "OpenStack client available: {{ openstackclient_pods.resources | length > 0 }}"
+      - "Deployment completed successfully!"

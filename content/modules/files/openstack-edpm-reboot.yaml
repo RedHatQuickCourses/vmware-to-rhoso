@@ -1,0 +1,12 @@
+apiVersion: dataplane.openstack.org/v1beta1
+kind: OpenStackDataPlaneDeployment
+metadata:
+  name: openstack-edpm-compute-1-reboot
+  namespace: openstack
+spec:
+  nodeSets:
+    - openstack-edpm-compute-1
+  servicesOverride: 
+  - reboot-os
+  ansibleExtraVars: 
+    edpm_reboot_strategy: force

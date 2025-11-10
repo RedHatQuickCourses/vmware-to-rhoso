@@ -1,0 +1,75 @@
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: osp-multi-nic-worker-ocp4-worker2
+spec:
+  desiredState:
+    interfaces:
+    - description: Configuring internalapi enp4s0
+      ipv4:
+        address:
+        - ip: 172.17.0.11
+          prefix-length: 24 
+        enabled: true
+        dhcp: false
+      ipv6:
+        enabled: false
+      mtu: 1500
+      name: enp4s0
+      state: up
+      type: ethernet
+    - description: Configuring storage enp5s0
+      ipv4:
+        address:
+        - ip: 172.18.0.11
+          prefix-length: 24 
+        enabled: true
+        dhcp: false
+      ipv6:
+        enabled: false
+      mtu: 1500
+      name: enp5s0
+      state: up
+      type: ethernet
+    - description: Configuring tenat enp6s0
+      ipv4:
+        address:
+        - ip: 172.19.0.11
+          prefix-length: 24 
+        enabled: true
+        dhcp: false
+      ipv6:
+        enabled: false
+      mtu: 1500
+      name: enp6s0
+      state: up
+      type: ethernet
+    - description: Configuring external enp8s0
+      ipv4:
+        address:
+        - ip: EXTERNAL_IP_WORKER_2
+          prefix-length: 16
+        enabled: true
+        dhcp: false
+      ipv6:
+        enabled: false
+      mtu: 1500
+      name: enp8s0
+      state: up
+      type: ethernet
+    - description: Configuring ctlplane enp3s0
+      ipv4:
+        address:
+        - ip: 172.22.0.11
+          prefix-length: 24 
+        enabled: true
+        dhcp: false
+      ipv6:
+        enabled: false
+      mtu: 1500
+      name: enp3s0
+      state: up
+      type: ethernet
+  nodeSelector:
+    kubernetes.io/hostname: control-plane-cluster-UUID-2 
+    node-role.kubernetes.io/worker: ""

@@ -1,0 +1,124 @@
+---
+# NFS Server Configuration role - Based on install-nfs-server.adoc documentation
+# This role connects to the NFS server through the bastion host using Ansible delegation
+# Configures NFS shares for Cinder, Glance, and AAP (Ansible Automation Platform)
+# Creates corresponding Kubernetes StorageClass and PersistentVolume for AAP
+
+- name: Create NFS directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0777'
+  loop:
+    - "{{ nfs_cinder_path }}"
+    - "{{ nfs_glance_path }}"
+    - "{{ nfs_aap_path }}"
+  delegate_to: nfs-server
+  become: true
+
+- name: Configure NFS exports
+  copy:
+    content: |
+      {{ nfs_cinder_path }} *(rw,sync,no_root_squash)
+      {{ nfs_glance_path }} *(rw,sync,no_root_squash)
+      {{ nfs_aap_path }} *(rw,sync,no_root_squash)
+    dest: /etc/exports
+    backup: true
+  delegate_to: nfs-server
+  become: true
+  notify: restart nfs-server
+
+- name: Delete default wired connection
+  ansible.builtin.command:
+    cmd: nmcli con delete "Wired connection 1"
+  delegate_to: nfs-server
+  become: true
+  ignore_errors: true
+  changed_when: false
+
+- name: Configure static network interface
+  ansible.builtin.command:
+    cmd: nmcli con add con-name "static-eth1" ifname eth1 type ethernet ip4 {{ nfs_server_ip }}/24
+  delegate_to: nfs-server
+  become: true
+  register: nmcli_add_result
+  changed_when: "'Connection successfully added' in (nmcli_add_result.stdout | default('')) or 'Connection successfully added' in (nmcli_add_result.stderr | default(''))"
+  failed_when: "nmcli_add_result.rc != 0 and 'already exists' not in (nmcli_add_result.stderr | default(''))"
+
+- name: Activate static network connection
+  ansible.builtin.command:
+    cmd: nmcli con up "static-eth1"
+  delegate_to: nfs-server
+  become: true
+  changed_when: true
+
+- name: Start and enable NFS server
+  systemd:
+    name: nfs-server
+    state: started
+    enabled: true
+  delegate_to: nfs-server
+  become: true
+
+- name: Export NFS shares
+  command: exportfs -ra
+  delegate_to: nfs-server
+  become: true
+  changed_when: true
+
+- name: Verify NFS exports
+  command: exportfs -v
+  delegate_to: nfs-server
+  become: true
+  register: nfs_exports_verify
+  changed_when: false
+
+- name: Display NFS exports
+  debug:
+    var: nfs_exports_verify.stdout_lines
+
+- name: Create NFS StorageClass and PersistentVolume
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      - apiVersion: storage.k8s.io/v1
+        kind: StorageClass
+        metadata:
+          name: nfs
+        provisioner: kubernetes.io/no-provisioner
+        reclaimPolicy: Delete
+      - apiVersion: v1
+        kind: PersistentVolume
+        metadata:
+          name: nfs-pv1
+        spec:
+          accessModes:
+            - ReadWriteOnce
+            - ReadWriteMany
+          capacity:
+            storage: 10Gi
+          nfs:
+            path: "{{ nfs_aap_path }}"
+            server: "{{ nfs_server_ip }}"
+          persistentVolumeReclaimPolicy: Delete
+          storageClassName: nfs
+          volumeMode: Filesystem
+
+- name: Verify StorageClass and PersistentVolume creation
+  kubernetes.core.k8s_info:
+    api_version: "{{ item.api_version }}"
+    kind: "{{ item.kind }}"
+    name: "{{ item.name }}"
+  register: nfs_resources_info
+  loop:
+    - api_version: storage.k8s.io/v1
+      kind: StorageClass
+      name: nfs
+    - api_version: v1
+      kind: PersistentVolume
+      name: nfs-pv1
+
+- name: Display NFS StorageClass and PersistentVolume status
+  debug:
+    msg: "{{ item.item.kind }} '{{ item.item.name }}' - Status: {{ 'Found' if item.resources | length > 0 else 'Not Found' }}"
+  loop: "{{ nfs_resources_info.results }}"

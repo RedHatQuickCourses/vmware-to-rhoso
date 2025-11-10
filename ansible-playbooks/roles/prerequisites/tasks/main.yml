@@ -1,0 +1,62 @@
+---
+# Prerequisites role - Based on prereqs.adoc documentation
+# Installs required operators: NMState, MetalLB, and verifies Cert-Manager
+
+- name: Check if pip3 is available
+  command: which pip3
+  register: pip3_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Python kubernetes library using pip3
+  pip:
+    name: 
+      - kubernetes
+      - openshift
+    executable: pip3
+    state: present
+  become: true
+  when: pip3_check.rc == 0
+  ignore_errors: true
+
+- name: Install Python kubernetes library using pip (fallback)
+  pip:
+    name: 
+      - kubernetes
+      - openshift
+    state: present
+  become: true
+  when: pip3_check.rc != 0
+  ignore_errors: true
+
+- name: Try installing kubernetes library via dnf/yum (RHEL fallback)
+  package:
+    name: python3-kubernetes
+    state: present
+  become: true
+  ignore_errors: true
+
+- name: Verify OpenShift cluster access using oc command
+  shell: oc get nodes
+  register: cluster_nodes_output
+  changed_when: false
+  failed_when: cluster_nodes_output.rc != 0
+
+- name: Display cluster nodes
+  debug:
+    var: cluster_nodes_output.stdout_lines
+
+- name: Test kubernetes module availability
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+  register: k8s_test
+  ignore_errors: true
+
+- name: Use kubernetes modules if available
+  include_tasks: k8s-modules.yml
+  when: k8s_test is succeeded
+
+- name: Fallback to oc commands if kubernetes modules fail
+  include_tasks: oc-native.yml
+  when: k8s_test is failed

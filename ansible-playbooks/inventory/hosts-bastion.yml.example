@@ -1,0 +1,58 @@
+---
+# Example inventory configuration for RHOSO deployment directly from bastion
+# Copy this to hosts-bastion.yml and update with your actual values
+
+all:
+  vars:
+    # REQUIRED: Lab Environment Configuration
+    lab_guid: "changeme"                                 # Replace with your actual lab GUID
+    
+    # REQUIRED: Red Hat Registry Service Account Credentials
+    # Get these from: https://access.redhat.com/articles/RegistryAuthentication#creating-registry-service-accounts-6
+    registry_username: ""    # Your registry service account
+    registry_password: ""      # Your registry token
+    
+    # REQUIRED: Red Hat Customer Portal Credentials  
+    # Your login credentials for https://access.redhat.com
+    rhc_username: ""       # Your RH Customer Portal username
+    rhc_password: ""                 # Your RH Customer Portal password
+    
+    # OPTIONAL: Internal lab hostnames (usually defaults work)
+    nfs_server_hostname: "nfsserver"                  # Internal NFS server hostname
+    compute_hostname: "compute01"                     # Internal compute node hostname
+    
+    # OPTIONAL: External IP configuration for OpenShift worker nodes
+    # These IPs are used to configure the external network interfaces on OCP worker nodes
+    rhoso_external_ip_worker_1: "172.21.0.21"        # External IP for worker node 1
+    rhoso_external_ip_worker_2: "172.21.0.22"        # External IP for worker node 2
+    rhoso_external_ip_worker_3: "172.21.0.23"        # External IP for worker node 3
+    
+    # OPTIONAL: Network configuration (usually defaults work)
+    rhoso_external_ip_bastion: "172.21.0.50"         # External IP for bastion
+
+# Bastion host (localhost when running directly from bastion)
+bastion:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "/usr/bin/python3.11"
+
+# NFS server operations (direct SSH from bastion)
+nfsserver:
+  hosts:
+    nfs-server:
+      ansible_host: "{{ nfs_server_hostname }}"
+      ansible_user: "cloud-user"
+      # ansible_python_interpreter: /usr/bin/python3  # Optional: Let Ansible auto-detect Python (works with Python 2.7+ or 3.x)
+      ansible_ssh_private_key_file: "/home/lab-user/.ssh/{{ lab_guid }}key.pem"
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+# Compute node operations (direct SSH from bastion)  
+compute_nodes:
+  hosts:
+    compute01:
+      ansible_host: "{{ compute_hostname }}"
+      ansible_user: "cloud-user"
+      # ansible_python_interpreter: /usr/bin/python3  # Optional: Let Ansible auto-detect Python (works with Python 2.7+ or 3.x)
+      ansible_ssh_private_key_file: "/home/lab-user/.ssh/{{ lab_guid }}key.pem"
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"

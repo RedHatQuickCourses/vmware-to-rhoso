@@ -1,0 +1,14 @@
+= Accessing Ansible Automation Platform
+
+== Credentials for Ansible Automation Platform
+
+Your Ansible Automation Platform console is available {aap_controller_web_url}[here^].
+
+Your admin login is available with the following credentials:
+
+* *User:* `{aap_controller_admin_user}`
+* *Password* `{aap_controller_admin_password}`
+
+image::02-aap_login.png[title="AAP Login", link=self, window=blank, width=100%]
+
+Use this opportunity to open and log into AAP consoles to prepare for the next section of the lab.

@@ -1,0 +1,105 @@
+---
+# Optional services playbook for enabling Heat (Orchestration) and Swift (Object Storage)
+# These services are disabled by default in the control plane configuration
+
+- name: Enable Optional OpenStack Services
+  hosts: bastion
+  become: false
+  vars_files:
+    - vars/main.yml
+  tasks:
+    - name: Enable Heat (Orchestration Service)
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: core.openstack.org/v1beta1
+          kind: OpenStackControlPlane
+          metadata:
+            name: openstack-control-plane
+            namespace: "{{ openstack_namespace }}"
+          spec:
+            heat:
+              enabled: true
+        merge_type: merge
+
+    - name: Enable Swift (Object Storage Service)  
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: core.openstack.org/v1beta1
+          kind: OpenStackControlPlane
+          metadata:
+            name: openstack-control-plane
+            namespace: "{{ openstack_namespace }}"
+          spec:
+            swift:
+              enabled: true
+        merge_type: merge
+
+    - name: Wait for Heat services to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ openstack_namespace }}"
+        label_selectors:
+          - "service=heat"
+      register: heat_pods
+      until: >
+        heat_pods.resources | length > 0 and
+        heat_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: 60
+      delay: 10
+
+    - name: Wait for Swift services to be ready
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ openstack_namespace }}"
+        label_selectors:
+          - "service=swift"
+      register: swift_pods
+      until: >
+        swift_pods.resources | length > 0 and
+        swift_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+      retries: 60
+      delay: 10
+
+    - name: Verify Heat orchestration service
+      kubernetes.core.k8s_exec:
+        namespace: "{{ openstack_namespace }}"
+        pod: "{{ openstackclient_pods.resources[0].metadata.name }}"
+        command: openstack orchestration service list
+      register: heat_services
+      vars:
+        openstackclient_pods: "{{ query('kubernetes.core.k8s', api_version='v1', kind='Pod', namespace=openstack_namespace, label_selector='service=openstackclient') }}"
+      when: openstackclient_pods | length > 0
+
+    - name: Display Heat services
+      debug:
+        var: heat_services.stdout_lines
+      when: heat_services is defined and heat_services.stdout_lines is defined
+
+    - name: Verify Swift object storage service
+      kubernetes.core.k8s_exec:
+        namespace: "{{ openstack_namespace }}"
+        pod: "{{ openstackclient_pods.resources[0].metadata.name }}"
+        command: openstack object store account show
+      register: swift_account
+      vars:
+        openstackclient_pods: "{{ query('kubernetes.core.k8s', api_version='v1', kind='Pod', namespace=openstack_namespace, label_selector='service=openstackclient') }}"
+      when: openstackclient_pods | length > 0
+      ignore_errors: true
+
+    - name: Display Swift account status
+      debug:
+        var: swift_account.stdout_lines
+      when: swift_account is defined and swift_account.stdout_lines is defined
+
+    - name: Summary of optional services
+      debug:
+        msg:
+          - "=== Optional Services Status ==="
+          - "Heat pods running: {{ heat_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length }}"
+          - "Swift pods running: {{ swift_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length }}"
+          - "Heat orchestration: {{ 'Available' if heat_services is defined and heat_services.rc == 0 else 'Not Available' }}"
+          - "Swift object storage: {{ 'Available' if swift_account is defined and swift_account.rc == 0 else 'Not Available' }}"

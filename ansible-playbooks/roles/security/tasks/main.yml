@@ -1,0 +1,36 @@
+---
+# Security Configuration role - Based on secure.adoc documentation
+
+- name: Create OpenStack secrets from files
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/osp-ng-ctlplane-secret.yaml"
+
+- name: Verify osp-secret was created
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: osp-secret
+    namespace: "{{ openstack_namespace }}"
+  register: osp_secret
+  failed_when: osp_secret.resources | length == 0
+
+- name: Create libvirt secret
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/osp-ng-libvirt-secret.yaml"
+
+- name: Verify libvirt-secret was created
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: libvirt-secret
+    namespace: "{{ openstack_namespace }}"
+  register: libvirt_secret
+  failed_when: libvirt_secret.resources | length == 0
+
+- name: Display secrets status
+  debug:
+    msg: 
+      - "osp-secret created: {{ osp_secret.resources | length > 0 }}"
+      - "libvirt-secret created: {{ libvirt_secret.resources | length > 0 }}"

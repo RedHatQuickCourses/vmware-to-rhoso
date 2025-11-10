@@ -1,0 +1,173 @@
+---
+# Install OpenStack Operators role - Based on install-operators.adoc documentation
+
+- name: Create working directory for OpenStack files
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/{{ files_directory }}"
+    state: directory
+    mode: '0755'
+
+- name: Copy OpenStack configuration files to working directory
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ ansible_env.HOME }}/{{ files_directory }}/{{ item | basename }}"
+    mode: '0644'
+  loop:
+    - "{{ playbook_dir }}/../content/files/osp-ng-nncp-w1.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-nncp-w2.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-nncp-w3.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-dataplane-node-set-deploy.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-dataplane-netconfig.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-openstack-operator.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-openstack-operator-init.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-ctlplane-deploy.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-ctlplane-secret.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-dataplane-deployment.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-netattach.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-metal-lb-ip-address-pools.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-metal-lb-l2-advertisements.yaml"
+    - "{{ playbook_dir }}/../content/files/osp-ng-libvirt-secret.yaml"
+    - "{{ playbook_dir }}/../content/files/nfs-cinder-conf"
+
+- name: Create openstack-operators project
+  kubernetes.core.k8s:
+    name: "{{ openstack_operators_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Create openstack project  
+  kubernetes.core.k8s:
+    name: "{{ openstack_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Replace UUID with GUID in repository files
+  ansible.builtin.replace:
+    path: "{{ ansible_env.HOME }}/{{ files_directory }}/{{ item }}"
+    regexp: 'UUID'
+    replace: "{{ guid }}"
+  loop:
+    - osp-ng-nncp-w1.yaml
+    - osp-ng-nncp-w2.yaml  
+    - osp-ng-nncp-w3.yaml
+    - osp-ng-dataplane-node-set-deploy.yaml
+    - osp-ng-dataplane-netconfig.yaml
+
+- name: Replace external IP placeholders for worker nodes
+  ansible.builtin.replace:
+    path: "{{ ansible_env.HOME }}/{{ files_directory }}/{{ item.file }}"
+    regexp: "{{ item.placeholder }}"
+    replace: "{{ item.value }}"
+  loop:
+    - file: "osp-ng-nncp-w1.yaml"
+      placeholder: "EXTERNAL_IP_WORKER_1"
+      value: "{{ worker_external_ips.rhoso_external_ip_worker_1 }}"
+    - file: "osp-ng-nncp-w2.yaml"
+      placeholder: "EXTERNAL_IP_WORKER_2"
+      value: "{{ worker_external_ips.rhoso_external_ip_worker_2 }}"
+    - file: "osp-ng-nncp-w3.yaml"
+      placeholder: "EXTERNAL_IP_WORKER_3"
+      value: "{{ worker_external_ips.rhoso_external_ip_worker_3 }}"
+
+- name: Apply OpenStack operator OperatorGroup and Subscription
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/osp-ng-openstack-operator.yaml"
+
+- name: Wait for OpenStack operator install plan to be created
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: InstallPlan
+    namespace: "{{ openstack_operators_namespace }}"
+  register: install_plans
+  until: install_plans.resources | length > 0
+  retries: 30
+  delay: 10
+
+- name: Get the install plan name
+  set_fact:
+    install_plan_name: "{{ install_plans.resources[0].metadata.name }}"
+
+- name: Approve the OpenStack operator installation
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: InstallPlan
+      metadata:
+        name: "{{ install_plan_name }}"
+        namespace: "{{ openstack_operators_namespace }}"
+      spec:
+        approved: true
+
+- name: Wait for OpenStack CRD to be available
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: openstacks.operator.openstack.org
+  register: openstack_crd
+  until: openstack_crd.resources | length > 0
+  retries: 60
+  delay: 10
+
+- name: Wait for OpenStack operator CSV to be succeeded
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ openstack_operators_namespace }}"
+    label_selectors:
+      - "operators.coreos.com/openstack-operator.openstack-operators"
+  register: openstack_csv
+  until: >
+    openstack_csv.resources | length > 0 and
+    openstack_csv.resources[0].status.phase == 'Succeeded'
+  retries: 60
+  delay: 10
+
+- name: Display OpenStack operator installation status
+  debug:
+    msg: |
+      === OpenStack Operator Installation Status ===
+      CSV Phase: {{ openstack_csv.resources[0].status.phase if openstack_csv.resources | length > 0 else 'No CSV found' }}
+      CRD Available: openstacks.operator.openstack.org
+      Ready to initialize OpenStack operator
+  when: openstack_csv.resources | length > 0
+
+- name: Initialize the OpenStack operator
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/osp-ng-openstack-operator-init.yaml"
+
+- name: Wait for OpenStack operator to be ready
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: Operator
+    name: "openstack-operator.{{ openstack_operators_namespace }}"
+  register: openstack_operator
+  until: >
+    openstack_operator.resources | length > 0 and
+    openstack_operator.resources[0].status.components is defined
+  retries: 60
+  delay: 10
+
+- name: Verify OpenStack operator pods are running
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ openstack_operators_namespace }}"
+    label_selectors:
+      - "control-plane=controller-manager"
+  register: operator_pods
+  until: operator_pods.resources | length > 0
+  retries: 60
+  delay: 10
+
+- name: Count running OpenStack operator pods
+  set_fact:
+    running_operator_pods: "{{ operator_pods.resources | json_query('[?status.phase==`Running`]') | length }}"
+
+- name: Display running OpenStack operator pods
+  debug:
+    msg: "OpenStack operator pods running: {{ running_operator_pods }} out of {{ operator_pods.resources | length }} total"

@@ -1,0 +1,277 @@
+Service	Assigned Email	Details
+openshift-cnv.osp-on-ocp-cnv.prod-lab001	
+- unassigned -
+
+Lab UI
+https://showroom-showroom.apps.cluster-abc123.dynamic.redhatworkshops.io/ 
+Messages
+OpenShift Console: https://console-openshift-console.apps.cluster-abc123.dynamic.redhatworkshops.io
+OpenShift API for command line 'oc' client: https://api.cluster-abc123.dynamic.redhatworkshops.io:6443
+Download oc client from http://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.16/openshift-client-linux.tar.gz
+
+RHOSO External IP Allocation Details:
+=======================================
+
+Allocation Name: cluster-abc123
+Cluster: ocpv01
+Network Subnet: 192.168.0.0/24
+Network CIDR: 192.168.0.0/24
+
+Allocated IP Addresses:
+EXTERNAL_IP_WORKER_1=192.168.5.10
+EXTERNAL_IP_WORKER_2=192.168.5.11
+EXTERNAL_IP_WORKER_3=192.168.5.12
+EXTERNAL_IP_BASTION=192.168.5.13
+PUBLIC_NET_START=192.168.5.20
+PUBLIC_NET_END=192.168.5.30
+CONVERSION_HOST_IP=192.168.5.25
+
+Environment Variables (copy and paste):
+export EXTERNAL_IP_WORKER_1=192.168.5.10
+export EXTERNAL_IP_WORKER_2=192.168.5.11
+export EXTERNAL_IP_WORKER_3=192.168.5.12
+export EXTERNAL_IP_BASTION=192.168.5.13
+export PUBLIC_NET_START=192.168.5.20
+export PUBLIC_NET_END=192.168.5.30
+export CONVERSION_HOST_IP=192.168.5.25
+
+Authentication via htpasswd is enabled on this cluster.
+
+User admin with password AdminPassword123 is cluster admin.
+OpenShift GitOps ArgoCD: https://openshift-gitops-server-openshift-gitops.apps.cluster-abc123.dynamic.redhatworkshops.io
+Lab instructions: https://showroom-showroom.apps.cluster-abc123.dynamic.redhatworkshops.io/
+You can access your bastion via SSH:
+ssh lab-user@ssh.ocpv01.rhdp.net -p 30001
+
+Enter ssh password when prompted: SSHPassword123
+
+Data
+openshift-cnv.osp-on-ocp-cnv.prod:
+  bastion_public_hostname: ssh.ocpv01.rhdp.net
+  bastion_ssh_command: ssh lab-user@ssh.ocpv01.rhdp.net -p 30001
+  bastion_ssh_password: SSHPassword123
+  bastion_ssh_port: '30001'
+  bastion_ssh_user_name: lab-user
+  cloud_provider: openshift_cnv
+  guid: abc123
+  openshift_api_server_url: https://api.cluster-abc123.dynamic.redhatworkshops.io:6443
+  openshift_api_url: https://api.cluster-abc123.dynamic.redhatworkshops.io:6443
+  openshift_client_download_url: >-
+    http://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.16/openshift-client-linux.tar.gz
+  openshift_cluster_admin_password: AdminPassword123
+  openshift_cluster_admin_username: admin
+  openshift_cluster_console_url: >-
+    https://console-openshift-console.apps.cluster-abc123.dynamic.redhatworkshops.io
+  openshift_cluster_ingress_domain: apps.cluster-abc123.dynamic.redhatworkshops.io
+  openshift_cluster_num_users: 0
+  openshift_cluster_user_base: user
+  openshift_cluster_user_count: 0
+  openshift_cluster_user_password: UserPassword456
+  openshift_console_url: >-
+    https://console-openshift-console.apps.cluster-abc123.dynamic.redhatworkshops.io
+  openshift_gitops_server: >-
+    https://openshift-gitops-server-openshift-gitops.apps.cluster-abc123.dynamic.redhatworkshops.io
+  openshift_kubeadmin_password: KubeAdminPassword789
+  rhoso_cluster_name: ocpv01
+  rhoso_conversion_host_ip: 192.168.5.25
+  rhoso_external_ip_bastion: 192.168.5.13
+  rhoso_external_ip_worker_1: 192.168.5.10
+  rhoso_external_ip_worker_2: 192.168.5.11
+  rhoso_external_ip_worker_3: 192.168.5.12
+  rhoso_ipam_allocation_name: cluster-abc123
+  rhoso_ipam_cluster_name: ocpv01
+  rhoso_ipam_network: 192.168.0.0/24
+  rhoso_ipam_subnet: 192.168.0.0/24
+  rhoso_public_net_end: 192.168.5.30
+  rhoso_public_net_start: 192.168.5.20
+  showroom_primary_view_url: https://showroom-showroom.apps.cluster-abc123.dynamic.redhatworkshops.io/
+  vcenter_console: vcenter.example.com
+  vcenter_datastore: datastore1
+  vcenter_domain: example
+  vcenter_full_user: lab-user@example
+  vcenter_password: VCenterPassword123
+  vcenter_user: lab-user
+openshift-cnv.osp-on-ocp-cnv.prod-lab002	
+- unassigned -
+
+Lab UI
+https://showroom-showroom.apps.cluster-def456.dynamic.redhatworkshops.io/ 
+Messages
+OpenShift Console: https://console-openshift-console.apps.cluster-def456.dynamic.redhatworkshops.io
+OpenShift API for command line 'oc' client: https://api.cluster-def456.dynamic.redhatworkshops.io:6443
+Download oc client from http://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.16/openshift-client-linux.tar.gz
+
+RHOSO External IP Allocation Details:
+=======================================
+
+Allocation Name: cluster-def456
+Cluster: ocpv02
+Network Subnet: 192.168.0.0/24
+Network CIDR: 192.168.0.0/24
+
+Allocated IP Addresses:
+EXTERNAL_IP_WORKER_1=192.168.6.10
+EXTERNAL_IP_WORKER_2=192.168.6.11
+EXTERNAL_IP_WORKER_3=192.168.6.12
+EXTERNAL_IP_BASTION=192.168.6.13
+PUBLIC_NET_START=192.168.6.20
+PUBLIC_NET_END=192.168.6.30
+CONVERSION_HOST_IP=192.168.6.25
+
+Environment Variables (copy and paste):
+export EXTERNAL_IP_WORKER_1=192.168.6.10
+export EXTERNAL_IP_WORKER_2=192.168.6.11
+export EXTERNAL_IP_WORKER_3=192.168.6.12
+export EXTERNAL_IP_BASTION=192.168.6.13
+export PUBLIC_NET_START=192.168.6.20
+export PUBLIC_NET_END=192.168.6.30
+export CONVERSION_HOST_IP=192.168.6.25
+
+Authentication via htpasswd is enabled on this cluster.
+
+User admin with password AdminPassword456 is cluster admin.
+OpenShift GitOps ArgoCD: https://openshift-gitops-server-openshift-gitops.apps.cluster-def456.dynamic.redhatworkshops.io
+Lab instructions: https://showroom-showroom.apps.cluster-def456.dynamic.redhatworkshops.io/
+You can access your bastion via SSH:
+ssh lab-user@ssh.ocpv02.rhdp.net -p 30002
+
+Enter ssh password when prompted: SSHPassword456
+
+Data
+openshift-cnv.osp-on-ocp-cnv.prod:
+  bastion_public_hostname: ssh.ocpv02.rhdp.net
+  bastion_ssh_command: ssh lab-user@ssh.ocpv02.rhdp.net -p 30002
+  bastion_ssh_password: SSHPassword456
+  bastion_ssh_port: '30002'
+  bastion_ssh_user_name: lab-user
+  cloud_provider: openshift_cnv
+  guid: def456
+  openshift_api_server_url: https://api.cluster-def456.dynamic.redhatworkshops.io:6443
+  openshift_api_url: https://api.cluster-def456.dynamic.redhatworkshops.io:6443
+  openshift_client_download_url: >-
+    http://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.16/openshift-client-linux.tar.gz
+  openshift_cluster_admin_password: AdminPassword456
+  openshift_cluster_admin_username: admin
+  openshift_cluster_console_url: >-
+    https://console-openshift-console.apps.cluster-def456.dynamic.redhatworkshops.io
+  openshift_cluster_ingress_domain: apps.cluster-def456.dynamic.redhatworkshops.io
+  openshift_cluster_num_users: 0
+  openshift_cluster_user_base: user
+  openshift_cluster_user_count: 0
+  openshift_cluster_user_password: UserPassword789
+  openshift_console_url: >-
+    https://console-openshift-console.apps.cluster-def456.dynamic.redhatworkshops.io
+  openshift_gitops_server: >-
+    https://openshift-gitops-server-openshift-gitops.apps.cluster-def456.dynamic.redhatworkshops.io
+  openshift_kubeadmin_password: KubeAdminPassword012
+  rhoso_cluster_name: ocpv02
+  rhoso_conversion_host_ip: 192.168.6.25
+  rhoso_external_ip_bastion: 192.168.6.13
+  rhoso_external_ip_worker_1: 192.168.6.10
+  rhoso_external_ip_worker_2: 192.168.6.11
+  rhoso_external_ip_worker_3: 192.168.6.12
+  rhoso_ipam_allocation_name: cluster-def456
+  rhoso_ipam_cluster_name: ocpv02
+  rhoso_ipam_network: 192.168.0.0/24
+  rhoso_ipam_subnet: 192.168.0.0/24
+  rhoso_public_net_end: 192.168.6.30
+  rhoso_public_net_start: 192.168.6.20
+  showroom_primary_view_url: https://showroom-showroom.apps.cluster-def456.dynamic.redhatworkshops.io/
+  vcenter_console: vcenter.example.com
+  vcenter_datastore: datastore2
+  vcenter_domain: example
+  vcenter_full_user: lab-user@example
+  vcenter_password: VCenterPassword456
+  vcenter_user: lab-user
+openshift-cnv.osp-on-ocp-cnv.prod-lab003	
+- unassigned -
+
+Lab UI
+https://showroom-showroom.apps.cluster-ghi789.dynamic.redhatworkshops.io/ 
+Messages
+OpenShift Console: https://console-openshift-console.apps.cluster-ghi789.dynamic.redhatworkshops.io
+OpenShift API for command line 'oc' client: https://api.cluster-ghi789.dynamic.redhatworkshops.io:6443
+Download oc client from http://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.16/openshift-client-linux.tar.gz
+
+RHOSO External IP Allocation Details:
+=======================================
+
+Allocation Name: cluster-ghi789
+Cluster: ocpv03
+Network Subnet: 192.168.0.0/24
+Network CIDR: 192.168.0.0/24
+
+Allocated IP Addresses:
+EXTERNAL_IP_WORKER_1=192.168.7.10
+EXTERNAL_IP_WORKER_2=192.168.7.11
+EXTERNAL_IP_WORKER_3=192.168.7.12
+EXTERNAL_IP_BASTION=192.168.7.13
+PUBLIC_NET_START=192.168.7.20
+PUBLIC_NET_END=192.168.7.30
+CONVERSION_HOST_IP=192.168.7.25
+
+Environment Variables (copy and paste):
+export EXTERNAL_IP_WORKER_1=192.168.7.10
+export EXTERNAL_IP_WORKER_2=192.168.7.11
+export EXTERNAL_IP_WORKER_3=192.168.7.12
+export EXTERNAL_IP_BASTION=192.168.7.13
+export PUBLIC_NET_START=192.168.7.20
+export PUBLIC_NET_END=192.168.7.30
+export CONVERSION_HOST_IP=192.168.7.25
+
+Authentication via htpasswd is enabled on this cluster.
+
+User admin with password AdminPassword789 is cluster admin.
+OpenShift GitOps ArgoCD: https://openshift-gitops-server-openshift-gitops.apps.cluster-ghi789.dynamic.redhatworkshops.io
+Lab instructions: https://showroom-showroom.apps.cluster-ghi789.dynamic.redhatworkshops.io/
+You can access your bastion via SSH:
+ssh lab-user@ssh.ocpv03.rhdp.net -p 30003
+
+Enter ssh password when prompted: SSHPassword789
+
+Data
+openshift-cnv.osp-on-ocp-cnv.prod:
+  bastion_public_hostname: ssh.ocpv03.rhdp.net
+  bastion_ssh_command: ssh lab-user@ssh.ocpv03.rhdp.net -p 30003
+  bastion_ssh_password: SSHPassword789
+  bastion_ssh_port: '30003'
+  bastion_ssh_user_name: lab-user
+  cloud_provider: openshift_cnv
+  guid: ghi789
+  openshift_api_server_url: https://api.cluster-ghi789.dynamic.redhatworkshops.io:6443
+  openshift_api_url: https://api.cluster-ghi789.dynamic.redhatworkshops.io:6443
+  openshift_client_download_url: >-
+    http://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-4.16/openshift-client-linux.tar.gz
+  openshift_cluster_admin_password: AdminPassword789
+  openshift_cluster_admin_username: admin
+  openshift_cluster_console_url: >-
+    https://console-openshift-console.apps.cluster-ghi789.dynamic.redhatworkshops.io
+  openshift_cluster_ingress_domain: apps.cluster-ghi789.dynamic.redhatworkshops.io
+  openshift_cluster_num_users: 0
+  openshift_cluster_user_base: user
+  openshift_cluster_user_count: 0
+  openshift_cluster_user_password: UserPassword012
+  openshift_console_url: >-
+    https://console-openshift-console.apps.cluster-ghi789.dynamic.redhatworkshops.io
+  openshift_gitops_server: >-
+    https://openshift-gitops-server-openshift-gitops.apps.cluster-ghi789.dynamic.redhatworkshops.io
+  openshift_kubeadmin_password: KubeAdminPassword345
+  rhoso_cluster_name: ocpv03
+  rhoso_conversion_host_ip: 192.168.7.25
+  rhoso_external_ip_bastion: 192.168.7.13
+  rhoso_external_ip_worker_1: 192.168.7.10
+  rhoso_external_ip_worker_2: 192.168.7.11
+  rhoso_external_ip_worker_3: 192.168.7.12
+  rhoso_ipam_allocation_name: cluster-ghi789
+  rhoso_ipam_cluster_name: ocpv03
+  rhoso_ipam_network: 192.168.0.0/24
+  rhoso_ipam_subnet: 192.168.0.0/24
+  rhoso_public_net_end: 192.168.7.30
+  rhoso_public_net_start: 192.168.7.20
+  showroom_primary_view_url: https://showroom-showroom.apps.cluster-ghi789.dynamic.redhatworkshops.io/
+  vcenter_console: vcenter.example.com
+  vcenter_datastore: datastore3
+  vcenter_domain: example
+  vcenter_full_user: lab-user@example
+  vcenter_password: VCenterPassword789
+  vcenter_user: lab-user

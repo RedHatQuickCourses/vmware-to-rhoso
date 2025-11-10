@@ -1,0 +1,236 @@
+---
+# Data Plane Configuration role - Based on create-dp.adoc documentation
+
+- name: Apply data plane network configuration
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/osp-ng-dataplane-netconfig.yaml"
+
+- name: Set hostname for compute node
+  hostname:
+    name: "{{ compute_nodes[0].hostname }}"
+  delegate_to: compute01
+  become: true
+
+- name: Configure static eth1 interface for control plane
+  ansible.builtin.command:
+    cmd: nmcli con add con-name "static-eth1" ifname eth1 type ethernet ip4 {{ compute_nodes[0].ctlplane_ip }}/24 ipv4.dns "172.22.0.89"
+  delegate_to: compute01
+  become: true
+  register: nmcli_static_result
+  changed_when: "'Connection successfully added' in (nmcli_static_result.stdout | default('')) or 'Connection successfully added' in (nmcli_static_result.stderr | default(''))"
+  failed_when: "nmcli_static_result.rc != 0 and 'already exists' not in (nmcli_static_result.stderr | default(''))"
+
+- name: Activate static-eth1 connection
+  ansible.builtin.command:
+    cmd: nmcli con up "static-eth1"
+  delegate_to: compute01
+  become: true
+  changed_when: true
+
+- name: Configure eth0 DHCP connection
+  ansible.builtin.command:
+    cmd: nmcli con add con-name "eth0-dhcp" ifname eth0 type ethernet ipv4.method auto ipv6.method ignore
+  delegate_to: compute01
+  become: true
+  register: nmcli_dhcp_result
+  changed_when: "'Connection successfully added' in (nmcli_dhcp_result.stdout | default('')) or 'Connection successfully added' in (nmcli_dhcp_result.stderr | default(''))"
+  failed_when: "nmcli_dhcp_result.rc != 0 and 'already exists' not in (nmcli_dhcp_result.stderr | default(''))"
+
+- name: Activate eth0-dhcp connection
+  ansible.builtin.command:
+    cmd: nmcli con up "eth0-dhcp"
+  delegate_to: compute01
+  become: true
+  changed_when: true
+
+- name: Set stable ID for eth0 connection
+  command: nmcli con mod eth0-dhcp connection.stable-id user-set
+  delegate_to: compute01
+  become: true
+  changed_when: true
+
+- name: Read SSH key files from remote host
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: ssh_key_files
+  loop:
+    - "{{ ansible_env.HOME }}/.ssh/{{ guid }}key.pub"
+    - "{{ ansible_env.HOME }}/.ssh/{{ guid }}key.pem"
+
+- name: Create dataplane ansible SSH key secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: dataplane-ansible-ssh-private-key-secret
+        namespace: "{{ openstack_namespace }}"
+      type: Opaque
+      data:
+        authorized_keys: "{{ ssh_key_files.results[0].content }}"
+        ssh-privatekey: "{{ ssh_key_files.results[1].content }}"
+        ssh-publickey: "{{ ssh_key_files.results[0].content }}"
+
+- name: Generate nova migration SSH key pair
+  community.crypto.openssh_keypair:
+    path: "{{ ansible_env.HOME }}/nova-migration-key"
+    type: ecdsa
+    size: 521
+    force: false
+
+- name: Read nova migration SSH key files from remote host
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: nova_migration_key_files
+  loop:
+    - "{{ ansible_env.HOME }}/nova-migration-key"
+    - "{{ ansible_env.HOME }}/nova-migration-key.pub"
+
+- name: Create nova migration SSH key secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: nova-migration-ssh-key
+        namespace: "{{ openstack_namespace }}"
+      type: Opaque
+      data:
+        ssh-privatekey: "{{ nova_migration_key_files.results[0].content }}"
+        ssh-publickey: "{{ nova_migration_key_files.results[1].content }}"
+
+- name: Create subscription manager authentication JSON
+  set_fact:
+    rhc_auth_json: "{{ {'login': {'username': subscription_manager_username, 'password': subscription_manager_password}} | to_json }}"
+  when: 
+    - subscription_manager_username != ""
+    - subscription_manager_password != ""
+
+- name: Create subscription manager secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: subscription-manager
+        namespace: "{{ openstack_namespace }}"
+      type: Opaque
+      data:
+        rhc_auth: "{{ rhc_auth_json | b64encode }}"
+  when: 
+    - subscription_manager_username != ""
+    - subscription_manager_password != ""
+
+- name: Create Red Hat registry authentication JSON
+  set_fact:
+    registry_logins_json: "{{ {'registry.redhat.io': {redhat_registry_username: redhat_registry_password}} | to_json }}"
+  when:
+    - redhat_registry_username != ""
+    - redhat_registry_password != ""
+
+- name: Create Red Hat registry secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: redhat-registry
+        namespace: "{{ openstack_namespace }}"
+      type: Opaque
+      data:
+        edpm_container_registry_logins: "{{ registry_logins_json | b64encode }}"
+  when:
+    - redhat_registry_username != ""
+    - redhat_registry_password != ""
+
+- name: Wait for OpenStack DataPlane CRDs to be available
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: "{{ item }}"
+  register: dataplane_crd
+  until: dataplane_crd.resources | length > 0
+  retries: 30
+  delay: 10
+  loop:
+    - openstackdataplanenodesets.dataplane.openstack.org
+    - openstackdataplanedeployments.dataplane.openstack.org
+
+- name: Apply data plane node set deployment
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/osp-ng-dataplane-node-set-deploy.yaml"
+  retries: 5
+  delay: 10
+
+- name: Apply data plane deployment
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/osp-ng-dataplane-deployment.yaml"
+  retries: 5
+  delay: 10
+
+- name: Debug Data Plane Deployment status structure
+  kubernetes.core.k8s_info:
+    api_version: dataplane.openstack.org/v1beta1
+    kind: OpenStackDataPlaneDeployment
+    name: openstack-edpm-compute-1
+    namespace: "{{ openstack_namespace }}"
+  register: dataplane_deployment_debug
+
+- name: Display current Data Plane Deployment status for debugging
+  debug:
+    msg: |
+      Full status: {{ dataplane_deployment_debug.resources[0].status if dataplane_deployment_debug.resources | length > 0 else 'No resources found' }}
+      Conditions: {{ dataplane_deployment_debug.resources[0].status.conditions if dataplane_deployment_debug.resources | length > 0 and dataplane_deployment_debug.resources[0].status.conditions is defined else 'No conditions found' }}
+  when: dataplane_deployment_debug.resources | length > 0
+
+- name: Wait for OpenStack Data Plane Deployment to show "Setup complete"
+  kubernetes.core.k8s_info:
+    api_version: dataplane.openstack.org/v1beta1
+    kind: OpenStackDataPlaneDeployment
+    name: openstack-edpm-compute-1
+    namespace: "{{ openstack_namespace }}"
+  register: dataplane_deployment_status
+  until: >
+    dataplane_deployment_status.resources | length > 0 and
+    dataplane_deployment_status.resources[0].status is defined and
+    (
+      (dataplane_deployment_status.resources[0].status.get('conditions', []) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0) or
+      (dataplane_deployment_status.resources[0].status.get('conditions', []) | selectattr('type', 'equalto', 'DeploymentReady') | selectattr('status', 'equalto', 'True') | list | length > 0) or
+      (dataplane_deployment_status.resources[0].status.get('deploymentConditions', {}) | length > 0 and 
+       dataplane_deployment_status.resources[0].status.deploymentConditions | dict2items | selectattr('value.status', 'equalto', 'True') | list | length == (dataplane_deployment_status.resources[0].status.deploymentConditions | dict2items | list | length)) or
+      (dataplane_deployment_status.resources[0].status.get('message', '') == 'Setup complete')
+    )
+  retries: 720  # 120 minutes timeout (data plane takes longer than control plane)
+  delay: 10
+
+- name: Display Data Plane Deployment final status
+  debug:
+    msg: |
+      === OpenStack Data Plane Deployment Final Status ===
+      Message: {{ dataplane_deployment_status.resources[0].status.get('message', 'No message') }}
+      Conditions: {{ dataplane_deployment_status.resources[0].status.get('conditions', []) | map(attribute='type') | list }}
+      Ready Conditions: {{ dataplane_deployment_status.resources[0].status.get('conditions', []) | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0 }}
+      Deployment Conditions: {{ dataplane_deployment_status.resources[0].status.get('deploymentConditions', {}).keys() | list }}
+      NodeSets: {{ dataplane_deployment_status.resources[0].status.get('nodeSetConditions', {}).keys() | list }}
+      Setup Complete: {{ dataplane_deployment_status.resources[0].status.get('message', '') == 'Setup complete' }}
+  when: dataplane_deployment_status.resources | length > 0
+
+- name: Discover compute hosts in Nova cell
+  kubernetes.core.k8s_exec:
+    namespace: "{{ openstack_namespace }}"
+    pod: nova-cell0-conductor-0
+    command: nova-manage cell_v2 discover_hosts --verbose
+  register: discover_hosts
+  ignore_errors: true
+
+- name: Display host discovery results
+  debug:
+    var: discover_hosts.stdout_lines
+  when: discover_hosts is defined and discover_hosts.stdout_lines is defined

@@ -1,0 +1,46 @@
+# SSH Configuration Template for Bastion/Jump Host Setup
+# Copy this to ~/.ssh/config and update with your actual values
+#
+# This configuration allows direct SSH to internal hosts through the bastion
+# and enables Ansible to connect to remote hosts via the jump host
+
+# Bastion/Jump Host Configuration
+Host bastion
+    HostName YOUR_BASTION_HOSTNAME  # e.g., ssh.ocpvdev01.rhdp.net
+    User YOUR_BASTION_USER          # e.g., lab-user
+    Port YOUR_BASTION_PORT          # e.g., 31295
+    # Uncomment one of the following authentication methods:
+    # PasswordAuthentication yes     # For password authentication
+    # IdentityFile ~/.ssh/your_key   # For key-based authentication
+
+# NFS Server through bastion
+Host nfsserver
+    HostName nfsserver
+    User cloud-user
+    ProxyJump bastion
+    IdentityFile ~/.ssh/YOUR_LAB_GUID_key.pem
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+# Compute nodes through bastion
+Host compute01
+    HostName compute01
+    User cloud-user
+    ProxyJump bastion
+    IdentityFile ~/.ssh/YOUR_LAB_GUID_key.pem
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+# Generic pattern for any internal host through bastion
+Host 172.17.* 172.18.* 172.19.* 172.22.*
+    ProxyJump bastion
+    User cloud-user
+    IdentityFile ~/.ssh/YOUR_LAB_GUID_key.pem
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+# Global SSH settings for lab environment
+Host *
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    ConnectTimeout 10

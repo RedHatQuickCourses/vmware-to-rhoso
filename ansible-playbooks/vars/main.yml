@@ -1,0 +1,115 @@
+---
+# Main variables file for RHOSO deployment
+# Based on the lab environment configuration from the AsciiDoc documentation
+
+# Lab Environment Configuration
+guid: "{{ lab_guid | default('changeme') }}"
+bastion_ssh_user_name: "{{ bastion_user | default('lab-user') }}"
+bastion_public_hostname: "{{ bastion_hostname | default('bastion.example.com') }}"
+bastion_ssh_port: "{{ bastion_port | default('22') }}"
+bastion_ssh_password: "{{ bastion_password | default('changeme') }}"
+
+
+# NFS Server Configuration
+nfs_server_ip: "172.18.0.13"
+nfs_cinder_path: "/nfs/cinder"
+nfs_glance_path: "/nfs/glance"
+nfs_aap_path: "/nfs/aap"
+
+# Network Configuration based on the networking table
+networks:
+  ctlplane:
+    cidr: "172.22.0.0/24"
+    allocation_range_start: "172.22.0.100"
+    allocation_range_end: "172.22.0.120"
+    allocation_range2_start: "172.22.0.150" 
+    allocation_range2_end: "172.22.0.200"
+    metallb_range_start: "172.22.0.80"
+    metallb_range_end: "172.22.0.90"
+    ipam_range_start: "172.22.0.30"
+    ipam_range_end: "172.22.0.70"
+    nncp_range_start: "172.22.0.10"
+    nncp_range_end: "172.22.0.12"
+    
+  external:
+    cidr: "172.21.0.0/24"
+    allocation_range_start: "172.21.0.61"
+    allocation_range_end: "172.21.0.90"
+    
+  internalapi:
+    vlan: 20
+    cidr: "172.17.0.0/24"
+    allocation_range_start: "172.17.0.100"
+    allocation_range_end: "172.17.0.250"
+    metallb_range_start: "172.17.0.80"
+    metallb_range_end: "172.17.0.90"
+    ipam_range_start: "172.17.0.30"
+    ipam_range_end: "172.17.0.70"
+    nncp_range_start: "172.17.0.10"
+    nncp_range_end: "172.17.0.12"
+    
+  storage:
+    vlan: 21
+    cidr: "172.18.0.0/24"
+    allocation_range_start: "172.18.0.100"
+    allocation_range_end: "172.18.0.250"
+    metallb_range_start: "172.18.0.80"
+    metallb_range_end: "172.18.0.90"
+    ipam_range_start: "172.18.0.30"
+    ipam_range_end: "172.18.0.70"
+    nncp_range_start: "172.18.0.10"
+    nncp_range_end: "172.18.0.12"
+    
+  tenant:
+    vlan: 22
+    cidr: "172.19.0.0/24"
+    allocation_range_start: "172.19.0.100"
+    allocation_range_end: "172.19.0.250"
+    metallb_range_start: "172.19.0.80"
+    metallb_range_end: "172.19.0.90"
+    ipam_range_start: "172.19.0.30"
+    ipam_range_end: "172.19.0.70"
+    nncp_range_start: "172.19.0.10"
+    nncp_range_end: "172.19.0.12"
+
+# OpenStack Operator Configuration
+openstack_operators_namespace: "openstack-operators"
+openstack_namespace: "openstack"
+
+# File Directory Configuration
+# Files will be copied to a working directory in the user's home
+files_directory: "openstack-files"
+
+# Compute Node Configuration
+compute_nodes:
+  - name: "edpm-compute-1"
+    hostname: "edpm-compute-1.sandbox-{{ guid }}-ocp4-cluster.svc.cluster.local"
+    ansible_host: "172.22.0.100"
+    ctlplane_ip: "172.22.0.100"
+    internalapi_ip: "172.17.0.100"
+    storage_ip: "172.18.0.100"
+    tenant_ip: "172.19.0.100"
+    external_ip: "172.21.0.100"
+
+# OpenShift Worker Node External IP Configuration
+# These IPs are used for configuring the external network interfaces on OCP worker nodes
+worker_external_ips:
+  rhoso_external_ip_worker_1: "{{ rhoso_external_ip_worker_1 | default('172.21.0.21') }}"
+  rhoso_external_ip_worker_2: "{{ rhoso_external_ip_worker_2 | default('172.21.0.22') }}"
+  rhoso_external_ip_worker_3: "{{ rhoso_external_ip_worker_3 | default('172.21.0.23') }}"
+
+# OpenStack Services Default Passwords (base64 encoded 'openstack')
+default_password_b64: "b3BlbnN0YWNr"
+
+# Registry Configuration (to be provided by user)
+redhat_registry_username: "{{ registry_username | default('') }}"
+redhat_registry_password: "{{ registry_password | default('') }}"
+
+# Subscription Manager Configuration (to be provided by user)
+subscription_manager_username: "{{ rhc_username | default('') }}"
+subscription_manager_password: "{{ rhc_password | default('') }}"
+
+
+# Timeout settings
+operator_wait_timeout: 600
+deployment_wait_timeout: 1800

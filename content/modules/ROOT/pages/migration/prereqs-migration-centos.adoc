@@ -1,0 +1,153 @@
+= Install pre-requisites
+
+== Infrastructure Components in the Migration Process
+
+=== vCenter Source Hypervisor
+
+The VMware vCenter environment acts as the source hypervisor, hosting the virtual machines to be migrated.
+
+vCenter provides VM management, snapshot capabilities, and Change Block Tracking (CBT) data used for incremental synchronization.
+
+=== OpenStack Target Cloud
+
+OpenStack Services on OpenShift serves as the destination cloud platform, where migrated virtual machines will be recreated and managed.
+
+It leverages OpenStack-native services such as Cinder for storage, Nova for compute, and Neutron for networking to ensure seamless VM operation post-migration.
+
+=== Ansible Automation Platform
+
+The Migrator Host is responsible for running the Ansible collection that orchestrates the migration. It can be a standalone external host using the ansible-playbook CLI or an Ansible job execution using AWX. Using AWX provides centralized management, workflow automation, and seamless integration with enterprise CI/CD pipelines, making large-scale migrations more efficient and maintainable.
+
+In this lab, we will use both methods, using the ansible-playbook CLI and using AWX.
+
+
+=== Conversion Host
+
+To transfer virtual machine data efficiently, the migration process utilizes a specialized virtual machine known as the Conversion Host, which is deployed in the OpenStack environment. Instead of routing VM and volume data through the Migrator Host, the Conversion Host allows direct transfer from the VMware environment to OpenStack. This approach optimizes network bandwidth, improves performance, and significantly accelerates the migration process while reducing unnecessary resource consumption.
+
+== Deploy a Conversion Host in your OpenStack environment 
+
+In the bastion:
+
+Download the latest Centos Stream 10 qcow2 that it will be used to deploy the conversion host:
+
+[source,bash,role=execute]
+----
+curl -O -L https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
+----
+
+Copy the bastion public key to the openstackclient pod:
+[source,bash,role=execute,subs=attributes]
+----
+oc cp /home/lab-user/.ssh/{guid}key.pub openstack/openstackclient:/home/cloud-admin/.
+----
+
+Copy the Centos Stream 10 qcow image to the openstackclient pod:
+[source,bash,role=execute]
+----
+oc cp /home/lab-user/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2 openstack/openstackclient:/home/cloud-admin/.
+----
+
+Access to the openstackclient pod
+
+[source,bash,role=execute]
+----
+oc rsh -n openstack openstackclient
+----
+
+Create networks and security groups if you didn't create it when installing RHOSO 18
+
+[source,bash,role=execute,subs=attributes]
+----
+export GATEWAY=192.168.0.1
+export PUBLIC_NETWORK_CIDR=192.168.0.0/16
+export PRIVATE_NETWORK_CIDR=10.0.0.0/24
+export PUBLIC_NET_START={rhoso_public_net_start}
+export PUBLIC_NET_END={rhoso_public_net_end}
+export DNS_SERVER=8.8.8.8
+openstack security group create basic
+openstack security group rule create basic --protocol tcp --dst-port 22:22 --remote-ip 0.0.0.0/0
+openstack security group rule create --protocol icmp basic
+openstack security group rule create --protocol udp --dst-port 53:53 basic
+openstack network create --external --provider-physical-network datacentre --provider-network-type flat public
+openstack network create --internal private
+openstack subnet create public-net \
+--subnet-range $PUBLIC_NETWORK_CIDR \
+--no-dhcp \
+--dns-nameserver $DNS_SERVER \
+--gateway $GATEWAY \
+--allocation-pool start=$PUBLIC_NET_START,end=$PUBLIC_NET_END \
+--network public
+openstack subnet create private-net \
+--subnet-range $PRIVATE_NETWORK_CIDR \
+--dns-nameserver $DNS_SERVER \
+--network private
+openstack router create vrouter
+openstack router set vrouter --external-gateway public
+openstack router add subnet vrouter private-net
+----
+
+Create image and flavors
+[source,bash,role=execute,subs=attributes]
+----
+openstack flavor create --ram 4096 --disk 35 --vcpu 2 --public migrate
+openstack keypair create --public-key ~/{guid}key.pub bastion_key
+openstack image create centos10-image --container-format bare --disk-format qcow2 --public --file CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
+----
+
+Create the Server and a Floating IP
+
+[source,bash,role=execute,subs=attributes]
+----
+openstack server create \
+    --flavor migrate --key-name bastion_key --network private --security-group basic \
+    --image centos10-image centos10-ch
+openstack floating ip create public --floating-ip-addres {rhoso_conversion_host_ip}
+----
+
+Add the floating IP above to the new VM in the next step.
+
+[source,bash,role=execute,subs=attributes]
+----
+openstack server add floating ip centos10-ch {rhoso_conversion_host_ip}
+----
+
+Make sure the VM is running.
+
+[source,bash,role=execute,subs=attributes]
+----
+openstack server list
+----
+
+. Sample Output
+
+[source,bash,subs=attributes]
+----
++--------------------------------------+-------------+--------+----------------------------------+----------------+---------+
+| ID                                   | Name        | Status | Networks                         | Image          | Flavor  |
++--------------------------------------+-------------+--------+----------------------------------+----------------+---------+
+| b037521d-b583-4ac0-9906-73ad9c0624dd | centos10-ch | ACTIVE | private=10.0.0.252, {rhoso_conversion_host_ip} | centos10-image | migrate |
++--------------------------------------+-------------+--------+----------------------------------+----------------+---------+
+----
+
+Exit the openstackclient pod.
+
+[source,bash,role=execute]
+----
+exit
+----
+
+From the bastion access to the VM.
+
+[source,bash,role=execute,subs=attributes]
+----
+ssh -i /home/lab-user/.ssh/{guid}key.pem cloud-user@{rhoso_conversion_host_ip}
+----
+
+Install the Vmware VIX rpm.
+
+[source,bash,role=execute]
+----
+sudo dnf install -y https://repo.storware.eu/vprotect/current/el9/vmware-vix-disklib-8.0.0-20521017.el9.x86_64.rpm
+logout
+----

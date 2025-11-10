@@ -1,0 +1,8 @@
+apiVersion: dataplane.openstack.org/v1beta1
+kind: OpenStackDataPlaneDeployment
+metadata:
+  name: compute-adoption
+spec:
+  nodeSets:
+    - compute-2
+    - compute-3

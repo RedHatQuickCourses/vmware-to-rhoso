@@ -1,0 +1,84 @@
+---
+# Main playbook for deploying Red Hat OpenStack Services on OpenShift (RHOSO)
+# This playbook automates the step-by-step instructions from the connected environment documentation
+# Designed to work with SSH jump host (bastion) connectivity
+
+- name: Deploy RHOSO - Prerequisites and Operators Installation
+  hosts: bastion
+  become: false
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+  roles:
+    - prerequisites
+    - install-operators
+  tags:
+    - prerequisites
+    - install-operators
+
+- name: Configure Security (must be done before NFS and Control Plane)
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+  roles:
+    - security
+  tags:
+    - security
+
+- name: Configure NFS Server (via bastion jump host)
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+  roles:
+    - nfs-server
+  tags:
+    - nfs-server
+
+- name: Prepare OpenShift for Network Isolation
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+  roles:
+    - network-isolation
+  tags:
+    - network-isolation
+
+- name: Create OpenStack Control Plane
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+  roles:
+    - control-plane
+  tags:
+    - control-plane
+
+- name: Configure Data Plane (includes compute node configuration)
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+  roles:
+    - data-plane
+  tags:
+    - data-plane
+
+- name: Access and Validate OpenStack
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+  roles:
+    - validation
+  tags:
+    - validation
+

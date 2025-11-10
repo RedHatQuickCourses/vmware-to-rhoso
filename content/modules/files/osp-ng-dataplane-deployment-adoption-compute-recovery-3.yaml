@@ -1,0 +1,7 @@
+apiVersion: dataplane.openstack.org/v1beta1
+kind: OpenStackDataPlaneDeployment
+metadata:
+  name: adoption-recover-3
+spec:
+  nodeSets:
+    - compute-3

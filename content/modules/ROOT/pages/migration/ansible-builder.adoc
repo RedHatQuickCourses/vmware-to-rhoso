@@ -1,0 +1,209 @@
+= Build Red Hat OpenStack VMware Migration Toolkit Execution Environment with Ansible Builder
+
+== Installation on Bastion Host
+
+To install ansible-builder on the bastion host:
+
+[source,bash,role=execute,subs=attributes]
+----
+dnf install ansible-builder
+----
+
+== Using Private Automation Hub
+
+For complete information on managing certification-validated content, see:
+https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/html/managing_automation_content/managing-cert-valid-content
+
+=== Creating the Offline Token in Automation Hub
+
+==== Procedure
+
+Navigate to Ansible Automation Platform on the Red Hat Hybrid Cloud Console at https://console.redhat.com/ansible/automation-hub/token/
+
+. From the navigation panel, select *Automation Hub* → *Connect to Hub*
+. Under *Offline token*, click *Load Token*
+. Click the *Copy to clipboard* icon to copy the offline token
+. Paste the token into a file and store in a secure location
+
+.Example Token (Sample)
+[source]
+----
+eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI0NzQzYTkzMC03YmJiLTRkZGQtOTgzMS00ODcxNGRlZDc0YjUifQ.eyJpYXQiOjE3NTg2MTI2ODAsImp0aSI6ImIzZGE2YzVhLWEwZDEtNDQzNC1iNWE5LWJhZTJjYWZlNDY1MSIsImlzcyI6Imh0dHBzOi8vc3NvLnJlZGhhdC5jb20vYXV0aC9yZWFsbXMvcmVkaGF0LWV4dGVybmFsIiwiYXVkIjoiaHR0cHM6Ly9zc28ucmVkaGF0LmNvbS9hdXRoL3JlYWxtcy9yZWRoYXQtZXh0ZXJuYWwiLCJzdWIiOiI3MjQ0NjQ1IiwidHlwIjoiT2ZmbGluZSIsImF6cCI6ImNsb3VkLXNlcnZpY2VzIiwibm9uY2UiOiI2NTQxZDExMC1mNGY3LTQ3OWUtODA3NS0yNzY4MGY4NmU3MTEiLCJzaWQiOiI4YjVkOGM2Mi1iNDRkLTQ0NTQtODMxMS1iMzNjZDgyNWZjNDAiLCJzY29wZSI6Im9wZW5pZCBhcGkuY29uc29sZSBiYXNpYyBhcGkuaWFtLnNlcnZpY2VfYWNjb3VudHMgcm9sZXMgd2ViLW9yaWdpbnMgY2xpZW50X3R5cGUucHJlX2tjMjUgYXBpLmFza19yZWRfaGF0IG9mZmxpbmVfYWNjZXNzIn0.KDTfApEOcT5WrrWU8cCvambPhslQThKsZsh_eCDnH_-lBs-uF80gAe32A4vBXIdrLJDNSqwfsB-Lx1nZr5x2aQ
+----
+
+WARNING: Never share or expose your actual authentication tokens. The token above is a sample for reference only.
+
+
+== Creating Execution Environments
+
+For detailed information on creating and using execution environments, see:
+https://docs.redhat.com/en/documentation/red_hat_ansible_automation_platform/2.5/html/creating_and_using_execution_environments/assembly-using-builder
+
+=== Execution Environment Configuration
+
+In the bastion, create the main execution environment configuration file:
+
+.execution-environment.yml
+[source,bash,role=execute,subs=attributes]
+----
+cat << EOF > execution-environment.yml
+---
+version: 3
+
+images:
+  base_image:
+    name: registry.redhat.io/ansible-automation-platform-25/ee-minimal-rhel9:latest
+
+options:
+  package_manager_path: /usr/bin/microdnf
+
+dependencies:
+  ansible_runner:
+    package_pip: ansible-runner
+  ansible_core:
+    package_pip: ansible-core
+  python: requirements.txt
+  system: binddep.txt
+  galaxy: requirements.yml
+  python_interpreter:
+    package_system: "python3"
+    python_path: "/usr/bin/python3"
+additional_build_steps:
+  prepend_base:
+    - "RUN mkdir -p /etc/sudoers.d"
+    - "RUN echo 'cloud-user ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/cloud-user"
+EOF
+----
+
+=== Python Requirements
+
+In the bastion, create the Python dependencies file:
+
+.requirements.txt
+[source,bash,role=execute,subs=attributes]
+----
+cat << EOF > requirements.txt
+requests
+pyVim
+pyVmomi
+EOF
+----
+
+=== Ansible Collections Requirements
+
+In the bastion, create the Ansible collections requirements file:
+
+.requirements.yml
+[source,bash,role=execute,subs=attributes]
+----
+cat << EOF > requirements.yml
+collections:
+  - name: vmware.vmware
+    version: 2.4.0
+  - name: vmware.vmware_rest
+    version: 4.9.0
+  - name: os_migrate.vmware_migration_kit
+    version: ">1.0.0"
+EOF
+----
+
+=== System Dependencies
+
+In the bastion, create the system package dependencies file:
+
+.binddep.txt
+[source,bash,role=execute,subs=attributes]
+----
+cat << EOF > binddep.txt
+openssh-clients
+sshpass
+python3
+python3-pip
+python3-dnf
+rsync
+gcc
+python3-devel
+git
+EOF
+----
+
+=== Creating ansible.cfg
+
+In the bastion, create the configuration file:
+
+.ansible.cfg (Public Hub)
+[source,ini,role=execute,subs=attributes]
+----
+cat << EOF > ansible.cfg
+[galaxy]
+server_list = automation_hub
+
+[galaxy_server.automation_hub]
+url=https://console.redhat.com/api/automation-hub/content/published/
+auth_url=https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token
+token=<your_console_redhat_com_token>
+EOF
+----
+
+== Building the Execution Environment
+
+To build the execution environment with a custom tag:
+
+[source,bash,role=execute,subs=attributes]
+----
+ansible-builder build --tag rhospvmt-ee:latest
+----
+
+=== Pushing to Container Registry
+
+First, push your execution environment to a container registry that your AAP can access:
+
+==== Push to AAP's Internal Registry
+
+If your AAP has an internal container registry:
+
+[source,bash,role=execute,subs=attributes]
+----
+# Tag your current image for AAP internal registry
+podman tag localhost/rhospvmt-ee:latest \
+  aap-for-rhoso-migrations-ansible-automation-platform.apps.cluster-{guid}.dynamic.redhatworkshops.io/rhospvmt-ee:latest
+
+# Log in to AAP registry using admin credentials
+podman login aap-for-rhoso-migrations-ansible-automation-platform.apps.cluster-{guid}.dynamic.redhatworkshops.io -u admin
+
+# Push to registry
+podman push aap-for-rhoso-migrations-ansible-automation-platform.apps.cluster-{guid}.dynamic.redhatworkshops.io/rhospvmt-ee:latest
+----
+
+=== Using AAP UI to Create Execution Environment
+
+After pushing your execution environment to the AAP registry, you can easily configure it for use in the controller through the AAP web interface.
+
+==== Step 1: Access Automation Content
+
+. Log into your AAP web interface
+. Navigate to *Automation Content* → *Execution Environments*
+. You should see your pushed execution environment listed (e.g., `rhospvmt-ee`)
+
+==== Step 2: Use in Controller
+
+. Locate your execution environment in the list
+. Click the *three vertical dots* (⋮) menu next to your execution environment
+. Select *Use in Controller*
+. You will be redirected to the execution environment creation page with the following fields:
+  ** *Name*: VMware Migration toolkit execution environment
+  ** *Image*: This field is pre-filled with your pushed EE image path
+  ** *Description*: Optional description field
+. Click *Create Execution Environment* to complete the configuration
+
+==== Step 3: Verify Configuration
+
+After clicking "Create Execution Environment":
+
+. You will be automatically redirected to *Automation Execution* → *Infrastructure* → *Execution Environments*.
+. Verify your execution environment appears in the list with:
+  ** *Name*: VMware Migration toolkit execution environment
+  ** *Image*: Full registry path to your pushed image
+  ** *Status*: Should show as available
+
+The execution environment is now available in the AAP controller and can be used to run migration playbooks.

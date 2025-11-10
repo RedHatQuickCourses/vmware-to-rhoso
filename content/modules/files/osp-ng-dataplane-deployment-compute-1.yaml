@@ -1,0 +1,7 @@
+apiVersion: dataplane.openstack.org/v1beta1
+kind: OpenStackDataPlaneDeployment
+metadata:
+  name: compute-1-deployment
+spec:
+  nodeSets:
+    - compute-1

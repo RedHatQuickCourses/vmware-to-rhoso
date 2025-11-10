@@ -1,0 +1,181 @@
+= Launch a VM Migration with Ansible Automation Platform 
+
+== Configuring AAP to Launch a Migration
+
+=== Creating Credentials
+
+1. From the navigation panel, go to *Automation Execution* → *Infrastructure* → *Credentials*.
+2. Click *Create Credentials* and set the following parameters:
+   * **Name:** Bastion key
+   * **Credential Type:** Machine
+   * **Username:** cloud-user
+   * **SSH Private Key:** File content from `/home/lab-user/.ssh/{guid}key.pem` on the bastion
+3. Click Create Credential
+
+=== Creating an Inventory
+
+1. From the navigation panel, go to *Automation Execution* → *Infrastructure* → *Inventories*.
+2. Click *Create Inventory* → *Create Inventory* and set the following parameters:
+   * **Name:** Conversion Host Inventory
+   * **Organization:** Default
+3. Click *Create Inventory*.
+
+=== Creating Hosts
+
+==== Conversion Host
+
+1. From the navigation panel, go to *Automation Execution* → *Infrastructure* → *Hosts*.
+2. Click *Create Host* and set the following parameters:
+   * **Name:** conversion_host
+   * **Inventory:** Conversion Host Inventory
+   * **Variables:**
+
+[source,bash,role=execute,subs=attributes]
+----
+ansible_host: {rhoso_conversion_host_ip}
+ansible_ssh_user: cloud-user
+----
+
+Click *Create Host*.
+
+==== Migrator Host
+
+1. From the navigation panel, go to *Automation Execution* → *Infrastructure* → *Hosts*.
+2. Click *Create Host* and set the following parameters:
+   * **Name:** migrator
+   * **Inventory:** Conversion Host Inventory
+   * **Variables:**
+
+[source,bash,role=execute]
+----
+ansible_connection: local
+ansible_python_interpreter: '{{ ansible_playbook_python }}'
+----
+
+Click *Create Host*.
+
+=== Creating an Execution Environment
+
+1. From the navigation panel, go to *Automation Execution* → *Infrastructure* → *Execution Environments*.
+2. Click *Create Execution Environment* and set the following parameters:
+   * **Name:** vmware migration toolkit Execution Environment
+   * **Image:** `quay.io/os-migrate/vmware-migration-kit:stable`
+3. Click *Create Execution Environment*.
+
+=== Creating a Project
+
+1. From the navigation panel, go to *Automation Execution* → *Projects*.
+2. Click *Create Project* and set the following parameters:
+   * **Name:** vmware migration toolkit project
+   * **Organization:** Default
+   * **Execution Environment:** vmware migration toolkit Execution Environment
+   * **Source Control Type:** Git
+   * **Source Control URL:** `https://github.com/os-migrate/vmware-migration-kit`
+3. Click *Create Project*.
+
+=== Creating the Job Template
+
+==== Preparing the Bastion
+
+In the bastion, create the folder to store the ansible variables:
+
+[source,bash,role=execute]
+----
+cd
+mkdir -p /home/lab-user/os-migrate-env
+----
+
+Run the following commands to configure OpenStack CLI access:
+
+[source,bash,role=execute]
+----
+oc project openstack
+alias openstack="oc exec -t openstackclient -- openstack"
+----
+
+Retrieve necessary OpenStack parameters:
+
+[source,bash,role=execute]
+----
+SECURITY_GROUP_ID=$(openstack security group list | awk '/ basic / {print $2}')
+PROJECT_ID=$(openstack project list | grep ' admin ' | awk '{print $2}')
+AUTH_URL=$(openstack endpoint list --service identity --interface public -c URL -f value)
+----
+
+Create the `os_migrate_for_aap.yaml` file:
+
+[source,bash,role=execute,subs=attributes]
+----
+cat << EOF > /home/lab-user/os-migrate-env/os_migrate_for_aap.yaml
+os_migrate_tear_down: false
+# osm working directory:
+runner_from_aee: true
+os_migrate_vmw_data_dir: /tmp/os-migrate
+copy_openstack_credentials_to_conv_host: false
+
+# Re-use an already deployed conversion host:
+already_deploy_conversion_host: true
+
+# If no mapped network, set the OpenStack network:
+openstack_private_network: private
+
+# Security groups for the instance:
+security_groups: ${SECURITY_GROUP_ID}
+use_existing_flavor: false
+
+# Network settings for OpenStack:
+os_migrate_create_network_port: true
+copy_metadata_to_conv_host: true
+used_mapped_networks: false
+
+os_migrate_configure_network: true
+
+vms_list:
+  - winweb01-{guid}
+
+# VMware parameters:
+vcenter_hostname: {vcenter_console}
+vcenter_username: {vcenter_full_user}
+vcenter_password: {vcenter_password}
+vcenter_datacenter: RS01
+
+os_cloud_environ: demo.redhat.com
+dst_cloud:
+  auth:
+    auth_url: ${AUTH_URL}
+    username: admin
+    project_id: ${PROJECT_ID}
+    project_name: admin
+    user_domain_name: Default
+    password: openstack
+  region_name: regionOne
+  interface: public
+  insecure: true
+  identity_api_version: 3
+EOF
+----
+
+==== Configuring the Job Template
+
+1. From the navigation panel, go to *Automation Execution* → *Templates*.
+2. Click *Create Template* → *Create Job Template* and set the following parameters:
+   * **Name:** Windows VM Migration
+   * **Inventory:** Conversion Host Inventory
+   * **Project:** vmware migration toolkit project
+   * **Playbook:** `playbooks/migration.yml`
+   * **Execution Environment:** vmware migration toolkit Execution Environment
+   * **Credentials:** Bastion key
+   * **Extra Variables:** Copy the content of `/home/lab-user/os-migrate-env/os_migrate_for_aap.yaml` from the bastion
+3. Click *Create Job Template*.
+
+=== Running the Migration
+
+1. From the navigation panel, go to *Automation Execution* → *Templates*.
+2. Locate the *Windows VM Migration* template.
+3. Click the *rocket icon* to launch the migration.
+
+== Access to the VM using Horizon
+
+1. Access to Horizon using the URL: https://horizon-openstack.apps.{guid}.dynamic.redhatworkshops.io
+2. In the top panel, Instances, click on the instance: winweb01-{guid}
+3. Click the tab Console to access to the console.

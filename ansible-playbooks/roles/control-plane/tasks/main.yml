@@ -1,0 +1,67 @@
+---
+# Control Plane Creation role - Based on create-cp.adoc documentation
+
+- name: Read Cinder NFS configuration file from remote host
+  ansible.builtin.slurp:
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/nfs-cinder-conf"
+  register: nfs_cinder_conf_content
+
+- name: Create Cinder NFS configuration secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cinder-nfs-config
+        namespace: "{{ openstack_namespace }}"
+      type: Opaque
+      data:
+        nfs-cinder-conf: "{{ nfs_cinder_conf_content.content }}"
+
+- name: Wait for OpenStack Control Plane CRD to be available
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: openstackcontrolplanes.core.openstack.org
+  register: openstack_cp_crd
+  until: openstack_cp_crd.resources | length > 0
+  retries: 30
+  delay: 10
+
+- name: Create OpenStack Control Plane
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ ansible_env.HOME }}/{{ files_directory }}/osp-ng-ctlplane-deploy.yaml"
+  retries: 5
+  delay: 10
+
+- name: Wait for OpenStack Control Plane to be ready
+  kubernetes.core.k8s_info:
+    api_version: core.openstack.org/v1beta1
+    kind: OpenStackControlPlane
+    name: openstack-control-plane
+    namespace: "{{ openstack_namespace }}"
+  register: control_plane_status
+  until: >
+    control_plane_status.resources | length > 0 and
+    control_plane_status.resources[0].status is defined and
+    control_plane_status.resources[0].status.conditions is defined and
+    control_plane_status.resources[0].status.conditions | json_query('[?type==`Ready` && status==`True`]') | length > 0
+  retries: 360  # 60 minutes timeout (longer for initial setup)
+  delay: 10
+
+- name: Check if Control Plane is ready
+  set_fact:
+    cp_ready: "{{ control_plane_status.resources[0].status.conditions | json_query('[?type==`Ready` && status==`True`]') | length > 0 }}"
+  when: 
+    - control_plane_status.resources | length > 0
+    - control_plane_status.resources[0].status is defined
+    - control_plane_status.resources[0].status.conditions is defined
+
+- name: Display Control Plane final status
+  debug:
+    msg: |
+      OpenStack Control Plane Ready: {{ cp_ready | default('Unknown') }}
+      Ready Conditions: {{ control_plane_status.resources[0].status.conditions | json_query('[?type==`Ready`]') | length }} found
+  when: control_plane_status.resources | length > 0

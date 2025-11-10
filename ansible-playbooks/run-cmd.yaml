@@ -1,0 +1,6 @@
+- name: Run custom command on target
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Run interactive shell
+      ansible.builtin.shell: "uptime"

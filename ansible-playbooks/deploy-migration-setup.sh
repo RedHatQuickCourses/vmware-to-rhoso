@@ -29,13 +29,17 @@ Required Arguments:
   --inventory <file>       Path to inventory file (e.g., inventory/hosts-guid.yml)
   --credentials <file>     Path to credentials file (e.g., credentials.yml)
 
-Deployment Modes:
-  --prereqs               Deploy conversion host ONLY (run this FIRST)
+Deployment Modes (default: --full):
+  --prereqs               Deploy conversion host ONLY
                           Creates OpenStack networks, security groups, and conversion host VM
-                          Required before AAP installation
+                          Use this if you only want to deploy prerequisites
   
-  --full                  Complete deployment: prerequisites + AAP + migration setup (default)
+  --full                  Complete deployment: prerequisites + AAP + migration setup (DEFAULT)
                           Runs both prereqs and migration-setup in sequence
+                          This is the default if no mode is specified
+  
+  --skip-prereqs          Deploy AAP and migration setup ONLY (skip conversion host)
+                          Use this if conversion host is already deployed
 
 Optional Arguments:
   --tags <tags>           Run only tasks with specific tags (comma-separated)
@@ -46,14 +50,16 @@ Optional Arguments:
   -h, --help              Display this help message
 
 Examples:
-  # STEP 1: Deploy conversion host (run this FIRST)
+  # Full deployment (DEFAULT - deploys everything)
+  $0 --inventory inventory/hosts-abc123.yml --credentials credentials.yml
+  # OR explicitly:
+  $0 --inventory inventory/hosts-abc123.yml --credentials credentials.yml --full
+  
+  # Deploy conversion host ONLY
   $0 --inventory inventory/hosts-abc123.yml --credentials credentials.yml --prereqs
 
-  # STEP 2: Deploy AAP and migration setup (after prereqs)
+  # Deploy AAP and migration setup ONLY (skip prereqs if already deployed)
   $0 --inventory inventory/hosts-abc123.yml --credentials credentials.yml --skip-prereqs
-
-  # ONE-STEP: Complete deployment (prereqs + AAP + migration)
-  $0 --inventory inventory/hosts-abc123.yml --credentials credentials.yml --full
 
   # Install only AAP (conversion host must exist)
   $0 --inventory inventory/hosts-abc123.yml --credentials credentials.yml --tags install-aap --skip-prereqs
@@ -87,8 +93,8 @@ EOF
     exit 1
 }
 
-# Deployment mode flags
-DEPLOY_PREREQS=false
+# Deployment mode flags (default: full deployment)
+DEPLOY_PREREQS=true
 DEPLOY_MIGRATION=true
 SKIP_PREREQS=false
 

@@ -159,6 +159,11 @@
   debug:
     msg: "Inventory created with ID: {{ inventory_result.id | default('already exists') }}"
 
+- name: Wait a moment for inventory to be fully ready
+  pause:
+    seconds: 2
+  when: inventory_result.changed | default(false)
+
 # Step 3: Create Host - conversion_host
 - name: Create conversion_host in inventory
   awx.awx.host:

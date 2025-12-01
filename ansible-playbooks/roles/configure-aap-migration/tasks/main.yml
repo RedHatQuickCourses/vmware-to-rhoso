@@ -2,9 +2,14 @@
 # Configure AAP for VM Migration
 # Based on migrate-vm-with-aap.adoc documentation
 
+- name: Get home directory
+  shell: echo $HOME
+  register: home_dir
+  changed_when: false
+
 - name: Create working directory for migration configuration
   ansible.builtin.file:
-    path: "{{ ansible_env.HOME }}/{{ migration_config_dir }}"
+    path: "{{ home_dir.stdout }}/{{ migration_config_dir }}"
     state: directory
     mode: '0755'
 
@@ -41,7 +46,7 @@
 - name: Create os_migrate configuration file for AAP
   ansible.builtin.template:
     src: os_migrate_for_aap.yaml.j2
-    dest: "{{ ansible_env.HOME }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml"
+    dest: "{{ home_dir.stdout }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml"
     mode: '0644'
   vars:
     security_group: "{{ security_group_id.stdout | trim }}"
@@ -54,7 +59,7 @@
       ========================================
       Migration Configuration Created
       ========================================
-      Configuration file: {{ ansible_env.HOME }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml
+      Configuration file: {{ home_dir.stdout }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml
       
       Next steps:
       1. Log in to AAP dashboard
@@ -69,7 +74,7 @@
 
 - name: Save AAP configuration instructions
   ansible.builtin.copy:
-    dest: "{{ ansible_env.HOME }}/{{ migration_config_dir }}/AAP_CONFIGURATION_INSTRUCTIONS.txt"
+    dest: "{{ home_dir.stdout }}/{{ migration_config_dir }}/AAP_CONFIGURATION_INSTRUCTIONS.txt"
     mode: '0644'
     content: |
       ========================================
@@ -116,7 +121,9 @@
          - Navigate to: Automation Execution → Infrastructure → Execution Environments
          - Click: Create Execution Environment
          - Name: VMware Migration toolkit execution environment
-         - Image: {{ aap_registry_url }}/{{ ee_image_name }}:{{ ee_image_tag }}
+         - Image: <AAP_HUB_REGISTRY_URL>/{{ ee_image_name }}:{{ ee_image_tag }}
+           Note: Get registry URL with: oc get route -n {{ aap_namespace }} | grep hub
+           Example: aap-for-rhoso-migrations-hub-ansible-automation-platform.apps.cluster-xxxx.dynamic.redhatworkshops.io/rhospvmt-ee:latest
          - Click: Create Execution Environment
       
       6. CREATE PROJECT
@@ -137,7 +144,7 @@
          - Playbook: playbooks/migration.yml
          - Execution Environment: VMware Migration toolkit execution environment
          - Credentials: Bastion key
-         - Extra Variables: Copy content from {{ ansible_env.HOME }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml
+         - Extra Variables: Copy content from {{ home_dir.stdout }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml
          - Click: Create Job Template
       
       8. RUN THE MIGRATION

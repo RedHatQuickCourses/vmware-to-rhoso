@@ -151,17 +151,30 @@
     aap_admin_password: "{{ aap_admin_secret.resources[0].data.password | b64decode }}"
   when: aap_admin_secret.resources | length > 0
 
-- name: Get AAP route
+- name: Get AAP routes
   kubernetes.core.k8s_info:
     api_version: route.openshift.io/v1
     kind: Route
     namespace: "{{ aap_namespace }}"
   register: aap_routes
 
-- name: Extract AAP dashboard URL
+- name: Find gateway or controller route
   set_fact:
-    aap_dashboard_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*gateway.*') | list | first).spec.host }}"
+    aap_gateway_route: "{{ aap_routes.resources | selectattr('metadata.name', 'search', 'gateway|controller') | list }}"
   when: aap_routes.resources | length > 0
+
+- name: Extract AAP dashboard URL from route
+  set_fact:
+    aap_dashboard_url: "https://{{ aap_gateway_route[0].spec.host }}"
+  when: 
+    - aap_routes.resources | length > 0
+    - aap_gateway_route is defined
+    - aap_gateway_route | length > 0
+
+- name: Set placeholder dashboard URL if no route found yet
+  set_fact:
+    aap_dashboard_url: "AAP route not yet available - check with: oc get routes -n {{ aap_namespace }}"
+  when: aap_gateway_route is not defined or aap_gateway_route | length == 0
 
 - name: Display AAP access information
   debug:
@@ -169,10 +182,20 @@
       ========================================
       AAP Installation Complete!
       ========================================
+      {% if aap_dashboard_url is defined and 'route not yet available' not in aap_dashboard_url %}
       Dashboard URL: {{ aap_dashboard_url }}
+      {% else %}
+      Dashboard URL: Routes are still being created...
+      Check routes with: oc get routes -n {{ aap_namespace }}
+      {% endif %}
       Username: admin
       Password: {{ aap_admin_password }}
       ========================================
+      {% if aap_dashboard_url is defined and 'route not yet available' not in aap_dashboard_url %}
       Please navigate to the URL and complete the AAP subscription setup.
+      {% else %}
+      Wait a few moments for routes to be created, then check:
+      oc get routes -n {{ aap_namespace }}
+      {% endif %}
       ========================================
 

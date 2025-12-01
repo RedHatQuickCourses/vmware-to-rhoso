@@ -1,0 +1,46 @@
+os_migrate_tear_down: false
+# osm working directory:
+runner_from_aee: true
+os_migrate_vmw_data_dir: /tmp/os-migrate
+copy_openstack_credentials_to_conv_host: false
+
+# Re-use an already deployed conversion host:
+already_deploy_conversion_host: true
+
+# If no mapped network, set the OpenStack network:
+openstack_private_network: private
+
+# Security groups for the instance:
+security_groups: {{ security_group }}
+use_existing_flavor: false
+
+# Network settings for OpenStack:
+os_migrate_create_network_port: true
+copy_metadata_to_conv_host: true
+used_mapped_networks: false
+
+os_migrate_configure_network: true
+
+vms_list:
+  - winweb01-{{ guid }}
+
+# VMware parameters:
+vcenter_hostname: {{ vcenter_hostname }}
+vcenter_username: {{ vcenter_username }}
+vcenter_password: {{ vcenter_password }}
+vcenter_datacenter: {{ vcenter_datacenter }}
+
+os_cloud_environ: demo.redhat.com
+dst_cloud:
+  auth:
+    auth_url: {{ openstack_auth_url }}
+    username: admin
+    project_id: {{ project }}
+    project_name: admin
+    user_domain_name: Default
+    password: openstack
+  region_name: regionOne
+  interface: public
+  insecure: true
+  identity_api_version: 3
+

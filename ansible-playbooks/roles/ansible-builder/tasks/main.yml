@@ -1,0 +1,193 @@
+---
+# Build Red Hat OpenStack VMware Migration Toolkit Execution Environment
+# Based on ansible-builder.adoc documentation
+
+- name: Install ansible-builder on bastion
+  become: true
+  ansible.builtin.dnf:
+    name: ansible-builder
+    state: present
+
+- name: Create working directory for ansible-builder
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/{{ ansible_builder_work_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Create execution-environment.yml
+  ansible.builtin.copy:
+    dest: "{{ ansible_env.HOME }}/{{ ansible_builder_work_dir }}/execution-environment.yml"
+    mode: '0644'
+    content: |
+      ---
+      version: 3
+
+      images:
+        base_image:
+          name: registry.redhat.io/ansible-automation-platform-25/ee-minimal-rhel9:latest
+
+      options:
+        package_manager_path: /usr/bin/microdnf
+
+      dependencies:
+        ansible_runner:
+          package_pip: ansible-runner
+        ansible_core:
+          package_pip: ansible-core
+        python: requirements.txt
+        system: binddep.txt
+        galaxy: requirements.yml
+        python_interpreter:
+          package_system: "python3"
+          python_path: "/usr/bin/python3.11"
+      additional_build_steps:
+        prepend_base:
+          - "RUN mkdir -p /etc/sudoers.d"
+          - "RUN echo 'cloud-user ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/cloud-user"
+
+- name: Create requirements.txt for Python dependencies
+  ansible.builtin.copy:
+    dest: "{{ ansible_env.HOME }}/{{ ansible_builder_work_dir }}/requirements.txt"
+    mode: '0644'
+    content: |
+      requests
+      pyVim
+      pyVmomi
+
+- name: Create requirements.yml for Ansible collections
+  ansible.builtin.copy:
+    dest: "{{ ansible_env.HOME }}/{{ ansible_builder_work_dir }}/requirements.yml"
+    mode: '0644'
+    content: |
+      collections:
+        - name: vmware.vmware
+          version: 2.4.0
+        - name: vmware.vmware_rest
+          version: 4.9.0
+        - name: os_migrate.vmware_migration_kit
+          version: ">2.1.0"
+
+- name: Create binddep.txt for system dependencies
+  ansible.builtin.copy:
+    dest: "{{ ansible_env.HOME }}/{{ ansible_builder_work_dir }}/binddep.txt"
+    mode: '0644'
+    content: |
+      openssh-clients
+      sshpass
+      python3
+      python3-pip
+      python3-dnf
+      rsync
+      gcc
+      python3-devel
+      git
+
+- name: Create ansible.cfg for automation hub access
+  ansible.builtin.copy:
+    dest: "{{ ansible_env.HOME }}/{{ ansible_builder_work_dir }}/ansible.cfg"
+    mode: '0644'
+    content: |
+      [galaxy]
+      server_list = automation_hub
+
+      [galaxy_server.automation_hub]
+      url=https://console.redhat.com/api/automation-hub/content/published/
+      auth_url=https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token
+      token={{ redhat_automation_hub_token }}
+  when: redhat_automation_hub_token is defined and redhat_automation_hub_token | length > 0
+
+- name: Check if podman is authenticated to registry.redhat.io
+  ansible.builtin.command:
+    cmd: podman login --get-login registry.redhat.io
+  register: podman_auth_check
+  failed_when: false
+  changed_when: false
+
+- name: Authenticate to registry.redhat.io
+  ansible.builtin.command:
+    cmd: podman login registry.redhat.io -u "{{ redhat_registry_username }}" -p "{{ redhat_registry_password }}"
+  when: podman_auth_check.rc != 0
+  no_log: true
+
+- name: Build execution environment with ansible-builder
+  ansible.builtin.command:
+    cmd: ansible-builder build --tag {{ ee_image_name }}:{{ ee_image_tag }}
+    chdir: "{{ ansible_env.HOME }}/{{ ansible_builder_work_dir }}"
+  register: ansible_builder_output
+  changed_when: "'Successfully tagged' in ansible_builder_output.stdout"
+
+- name: Display build output
+  debug:
+    msg: "{{ ansible_builder_output.stdout_lines }}"
+
+- name: Get AAP Hub route for registry
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ aap_namespace }}"
+  register: aap_hub_route
+  when: push_to_aap_registry | default(true)
+
+- name: Extract AAP Hub registry URL
+  set_fact:
+    aap_hub_registry_url: "{{ item.spec.host }}"
+  when: 
+    - push_to_aap_registry | default(true)
+    - "'hub' in item.metadata.name"
+    - "'hub-web-svc' in item.spec.to.name"
+  loop: "{{ aap_hub_route.resources }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Display AAP Hub registry URL
+  debug:
+    msg: "AAP Hub Registry URL: {{ aap_hub_registry_url }}"
+  when: push_to_aap_registry | default(true)
+
+- name: Tag execution environment for AAP internal registry
+  ansible.builtin.command:
+    cmd: >
+      podman tag localhost/{{ ee_image_name }}:{{ ee_image_tag }}
+      {{ aap_hub_registry_url }}/{{ ee_image_name }}:{{ ee_image_tag }}
+  when: push_to_aap_registry | default(true)
+
+- name: Get AAP admin password for registry authentication
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ aap_instance_name }}-admin-password"
+    namespace: "{{ aap_namespace }}"
+  register: aap_admin_secret
+  when: push_to_aap_registry | default(true)
+
+- name: Decode AAP admin password
+  set_fact:
+    aap_registry_password: "{{ aap_admin_secret.resources[0].data.password | b64decode }}"
+  when: 
+    - push_to_aap_registry | default(true)
+    - aap_admin_secret.resources | length > 0
+
+- name: Authenticate to AAP internal registry
+  ansible.builtin.command:
+    cmd: podman login {{ aap_hub_registry_url }} -u admin -p {{ aap_registry_password }}
+  when: push_to_aap_registry | default(true)
+  no_log: true
+
+- name: Push execution environment to AAP internal registry
+  ansible.builtin.command:
+    cmd: podman push {{ aap_hub_registry_url }}/{{ ee_image_name }}:{{ ee_image_tag }}
+  when: push_to_aap_registry | default(true)
+  register: push_output
+
+- name: Display push output
+  debug:
+    msg: |
+      ========================================
+      Execution Environment Build Complete!
+      ========================================
+      Image: {{ ee_image_name }}:{{ ee_image_tag }}
+      Registry: {{ aap_hub_registry_url }}
+      Full Image URL: {{ aap_hub_registry_url }}/{{ ee_image_name }}:{{ ee_image_tag }}
+      ========================================
+  when: push_to_aap_registry | default(true)
+

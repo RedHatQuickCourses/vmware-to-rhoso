@@ -281,3 +281,47 @@ When modifying these playbooks:
 3. Add proper error handling and verification steps
 4. Update documentation for any new variables or requirements
 5. Test thoroughly in a lab environment before production use
+
+## VM Migration Setup
+
+After deploying RHOSO, you can set up VM migration from VMware to RHOSO using Ansible Automation Platform (AAP).
+
+### Quick Start for Migration
+
+```bash
+# 1. Add VMware credentials to your inventory file
+vi inventory/hosts-<guid>.yml
+# Add: vcenter_console, vcenter_full_user, vcenter_password, vcenter_datacenter
+
+# 2. Run migration setup playbook
+./deploy-migration-setup.sh --inventory inventory/hosts-<guid>.yml --credentials credentials.yml
+```
+
+### What Gets Deployed
+
+The migration setup playbook automates:
+
+1. **Ansible Automation Platform Installation** - Deploys AAP on OpenShift
+2. **Execution Environment Build** - Creates VMware Migration Toolkit container image
+3. **Migration Configuration** - Generates AAP configuration for VM migration
+
+### Documentation
+
+For detailed migration setup documentation, see:
+
+- **[Migration Quick Start Guide](MIGRATION_QUICK_START.md)** - Fast track guide
+- **[Migration Setup README](README-migration-setup.md)** - Comprehensive documentation
+- **[Migration Implementation Summary](MIGRATION_SETUP_SUMMARY.md)** - Technical details
+
+### Migration Playbook Tags
+
+```bash
+# Install AAP only
+./deploy-migration-setup.sh --inventory inventory/hosts-<guid>.yml --credentials credentials.yml --tags install-aap
+
+# Build execution environment only
+./deploy-migration-setup.sh --inventory inventory/hosts-<guid>.yml --credentials credentials.yml --tags ansible-builder
+
+# Configure migration only
+./deploy-migration-setup.sh --inventory inventory/hosts-<guid>.yml --credentials credentials.yml --tags configure-migration
+```

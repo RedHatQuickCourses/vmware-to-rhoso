@@ -1,0 +1,149 @@
+---
+# Configure AAP for VM Migration
+# Based on migrate-vm-with-aap.adoc documentation
+
+- name: Create working directory for migration configuration
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/{{ migration_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Configure OpenStack CLI access
+  ansible.builtin.shell: |
+    oc project openstack
+  changed_when: false
+
+- name: Get OpenStack security group ID
+  ansible.builtin.shell: |
+    oc exec -t openstackclient -- openstack security group list | awk '/ basic / {print $2}'
+  register: security_group_id
+  changed_when: false
+
+- name: Get OpenStack project ID
+  ansible.builtin.shell: |
+    oc exec -t openstackclient -- openstack project list | grep ' admin ' | awk '{print $2}'
+  register: project_id
+  changed_when: false
+
+- name: Get OpenStack auth URL
+  ansible.builtin.shell: |
+    oc exec -t openstackclient -- openstack endpoint list --service identity --interface public -c URL -f value
+  register: auth_url
+  changed_when: false
+
+- name: Get conversion host IP
+  ansible.builtin.shell: |
+    oc get pod -n openstack -l component=compute -o jsonpath='{.items[0].status.podIP}'
+  register: conversion_host_ip
+  changed_when: false
+  failed_when: false
+
+- name: Create os_migrate configuration file for AAP
+  ansible.builtin.template:
+    src: os_migrate_for_aap.yaml.j2
+    dest: "{{ ansible_env.HOME }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml"
+    mode: '0644'
+  vars:
+    security_group: "{{ security_group_id.stdout | trim }}"
+    project: "{{ project_id.stdout | trim }}"
+    openstack_auth_url: "{{ auth_url.stdout | trim }}"
+
+- name: Display migration configuration file location
+  debug:
+    msg: |
+      ========================================
+      Migration Configuration Created
+      ========================================
+      Configuration file: {{ ansible_env.HOME }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml
+      
+      Next steps:
+      1. Log in to AAP dashboard
+      2. Create credentials (Bastion key)
+      3. Create inventory (Conversion Host Inventory)
+      4. Create hosts (conversion_host and migrator)
+      5. Create execution environment
+      6. Create project (vmware migration toolkit project)
+      7. Create job template (Windows VM Migration)
+      8. Copy the content of os_migrate_for_aap.yaml to the job template extra variables
+      ========================================
+
+- name: Save AAP configuration instructions
+  ansible.builtin.copy:
+    dest: "{{ ansible_env.HOME }}/{{ migration_config_dir }}/AAP_CONFIGURATION_INSTRUCTIONS.txt"
+    mode: '0644'
+    content: |
+      ========================================
+      AAP Configuration Instructions for VM Migration
+      ========================================
+      
+      1. CREATE CREDENTIALS
+         - Navigate to: Automation Execution → Credentials
+         - Click: Create Credentials
+         - Name: Bastion key
+         - Credential Type: Machine
+         - Username: cloud-user
+         - SSH Private Key: Content from /home/lab-user/.ssh/{{ guid }}key.pem
+         - Click: Create Credential
+      
+      2. CREATE INVENTORY
+         - Navigate to: Automation Execution → Infrastructure → Inventories
+         - Click: Create Inventory → Create Inventory
+         - Name: Conversion Host Inventory
+         - Organization: Default
+         - Click: Create Inventory
+      
+      3. CREATE HOST: conversion_host
+         - Navigate to: Automation Execution → Infrastructure → Hosts
+         - Click: Create Host
+         - Name: conversion_host
+         - Inventory: Conversion Host Inventory
+         - Variables:
+           ansible_host: {{ conversion_host_ip.stdout | default('172.22.0.100') | trim }}
+           ansible_ssh_user: cloud-user
+         - Click: Create Host
+      
+      4. CREATE HOST: migrator
+         - Navigate to: Automation Execution → Infrastructure → Hosts
+         - Click: Create Host
+         - Name: migrator
+         - Inventory: Conversion Host Inventory
+         - Variables:
+           ansible_connection: local
+           ansible_python_interpreter: '{{ '{{' }} ansible_playbook_python {{ '}}' }}'
+         - Click: Create Host
+      
+      5. CREATE EXECUTION ENVIRONMENT
+         - Navigate to: Automation Execution → Infrastructure → Execution Environments
+         - Click: Create Execution Environment
+         - Name: VMware Migration toolkit execution environment
+         - Image: {{ aap_registry_url }}/{{ ee_image_name }}:{{ ee_image_tag }}
+         - Click: Create Execution Environment
+      
+      6. CREATE PROJECT
+         - Navigate to: Automation Execution → Projects
+         - Click: Create Project
+         - Name: vmware migration toolkit project
+         - Execution Environment: VMware migration toolkit Execution Environment
+         - Source Control Type: Git
+         - Source Control URL: https://github.com/os-migrate/vmware-migration-kit
+         - Click: Create Project
+      
+      7. CREATE JOB TEMPLATE
+         - Navigate to: Automation Execution → Templates
+         - Click: Create Template → Create Job Template
+         - Name: Windows VM Migration
+         - Inventory: Conversion Host Inventory
+         - Project: vmware migration toolkit project
+         - Playbook: playbooks/migration.yml
+         - Execution Environment: VMware Migration toolkit execution environment
+         - Credentials: Bastion key
+         - Extra Variables: Copy content from {{ ansible_env.HOME }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml
+         - Click: Create Job Template
+      
+      8. RUN THE MIGRATION
+         - Navigate to: Automation Execution → Templates
+         - Locate: Windows VM Migration template
+         - Click: Rocket icon to launch the migration
+      
+      ========================================
+

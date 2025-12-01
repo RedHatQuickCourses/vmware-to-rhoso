@@ -1,0 +1,69 @@
+---
+# Example inventory file for VM Migration Setup
+# Copy this file to hosts-migration-<your-guid>.yml and fill in your specific values
+#
+# Prerequisites:
+# - RHOSO must already be deployed (run site.yml first)
+# - OpenShift cluster must be accessible (oc CLI configured)
+# - Bastion host access required
+
+all:
+  vars:
+    # ========================================
+    # REQUIRED: Lab Environment
+    # ========================================
+    lab_guid: "changeme"  # Your lab GUID (e.g., "wtdd4", "abc123")
+    
+    # ========================================
+    # REQUIRED: Red Hat Credentials
+    # ========================================
+    # Red Hat Registry credentials (for pulling container images)
+    # Get service account from: https://access.redhat.com/terms-based-registry/
+    registry_username: ""  # Format: "12345678|myserviceaccount"
+    registry_password: ""  # Long token starting with "eyJhbGciOiJSUzUxMiJ9..."
+    
+    # ========================================
+    # REQUIRED: VMware Configuration
+    # ========================================
+    # VMware vCenter connection details for migration source
+    vcenter_hostname: "vcenter.example.com"             # vCenter hostname/IP
+    vcenter_username: "administrator@vsphere.local"     # vCenter username
+    vcenter_password: "changeme"                        # vCenter password
+    vcenter_datacenter: "Datacenter"                    # vCenter datacenter name
+    
+    # ========================================
+    # REQUIRED: OpenStack Conversion Host
+    # ========================================
+    # IP address of the OpenStack compute node where VMs will be converted
+    # This is the ACTUAL IP that will be used in AAP inventory for the conversion_host
+    # IMPORTANT: Update this with your actual compute node IP!
+    rhoso_conversion_host_ip: "192.168.7.122"  # Example: Change to your actual compute node IP
+    
+    # Public network allocation range for OpenStack
+    # Used when deploying the conversion host with migration-prereqs.yml
+    rhoso_public_net_start: "192.168.7.100"    # Start of public IP range
+    rhoso_public_net_end: "192.168.7.200"      # End of public IP range
+    
+    # ========================================
+    # OPTIONAL: AAP API Token
+    # ========================================
+    # If not provided, a token will be automatically created during deployment
+    # To reuse an existing token (faster), uncomment and add it here:
+    # aap_api_token: "your-token-here"
+    
+    # ========================================
+    # OPTIONAL: Red Hat Automation Hub Token
+    # ========================================
+    # Only needed if using private automation hub for certified collections
+    # Get your token from: https://console.redhat.com/ansible/automation-hub/token/
+    redhat_automation_hub_token: ""
+
+# ========================================
+# Bastion Host (Where Playbooks Run)
+# ========================================
+bastion:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "/usr/bin/python3.11"
+

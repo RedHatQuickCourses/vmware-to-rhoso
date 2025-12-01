@@ -1,0 +1,276 @@
+---
+# Complete End-to-End VM Migration Playbook
+# This playbook performs the complete migration workflow:
+# 1. Setup AAP and build execution environment (if not already done)
+# 2. Configure AAP via API
+# 3. Launch migration job
+# 4. Optionally wait for completion
+#
+# Usage:
+#   # Full deployment and migration (no wait)
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-complete.yml
+#
+#   # Full deployment and migration (wait for completion)
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-complete.yml -e "wait_for_migration=true"
+#
+#   # Skip AAP installation if already done
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-complete.yml --skip-tags install-aap
+#
+#   # Only configure and launch (setup already done)
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-complete.yml --tags configure-aap-api,launch-migration
+
+- name: Phase 1 - Install and Configure Ansible Automation Platform
+  hosts: bastion
+  become: false
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  roles:
+    - install-aap
+  tags:
+    - install-aap
+    - aap
+    - setup
+
+- name: Phase 2 - Build VMware Migration Toolkit Execution Environment
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  roles:
+    - ansible-builder
+  tags:
+    - ansible-builder
+    - builder
+    - execution-environment
+    - setup
+
+- name: Phase 3 - Generate Migration Configuration Files
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  roles:
+    - configure-aap-migration
+  tags:
+    - configure-migration
+    - migration-config
+    - setup
+
+- name: Phase 4 - Configure AAP via API
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  roles:
+    - configure-aap-api
+  tags:
+    - configure-aap-api
+    - aap-api
+    - api-config
+
+- name: Phase 5 - Launch VM Migration
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  vars:
+    wait_for_completion: "{{ wait_for_migration | default(false) }}"
+    job_timeout: "{{ migration_timeout | default(3600) }}"
+  tags:
+    - launch-migration
+    - migrate
+  
+  tasks:
+    - name: Get AAP admin password from secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ aap_instance_name }}-admin-password"
+        namespace: "{{ aap_namespace }}"
+      register: aap_admin_secret
+
+    - name: Decode AAP admin password
+      set_fact:
+        aap_admin_password: "{{ aap_admin_secret.resources[0].data.password | b64decode }}"
+      when: aap_admin_secret.resources | length > 0
+
+    - name: Get AAP Controller route
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ aap_namespace }}"
+      register: aap_routes
+
+    - name: Extract AAP Controller URL
+      set_fact:
+        aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*gateway.*') | list | first).spec.host }}"
+      when: aap_routes.resources | length > 0
+
+    - name: Get Windows VM Migration job template
+      uri:
+        url: "{{ aap_controller_url }}/api/v2/job_templates/?name=Windows+VM+Migration"
+        method: GET
+        user: admin
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: job_template_query
+
+    - name: Set job template ID
+      set_fact:
+        job_template_id: "{{ job_template_query.json.results[0].id }}"
+      when: job_template_query.json.results | length > 0
+
+    - name: Display migration launch information
+      debug:
+        msg: |
+          ========================================
+          Phase 5: Launching VM Migration
+          ========================================
+          Job Template ID: {{ job_template_id }}
+          Wait for completion: {{ wait_for_completion }}
+          {% if wait_for_completion %}
+          Timeout: {{ job_timeout }} seconds
+          {% endif %}
+          ========================================
+
+    - name: Launch migration job template
+      uri:
+        url: "{{ aap_controller_url }}/api/v2/job_templates/{{ job_template_id }}/launch/"
+        method: POST
+        user: admin
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        status_code: [201]
+      register: job_launch
+
+    - name: Set job ID
+      set_fact:
+        job_id: "{{ job_launch.json.id }}"
+
+    - name: Display job launch confirmation
+      debug:
+        msg: |
+          ========================================
+          Migration Job Launched!
+          ========================================
+          Job ID: {{ job_id }}
+          Job URL: {{ aap_controller_url }}/#/jobs/playbook/{{ job_id }}/output
+          ========================================
+
+    - name: Wait for migration job to complete
+      uri:
+        url: "{{ aap_controller_url }}/api/v2/jobs/{{ job_id }}/"
+        method: GET
+        user: admin
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: job_status
+      until: job_status.json.status in ['successful', 'failed', 'error', 'canceled']
+      retries: "{{ (job_timeout | int / 10) | int }}"
+      delay: 10
+      when: wait_for_completion | bool
+
+    - name: Display final job status
+      debug:
+        msg: |
+          ========================================
+          Migration Job: {{ job_status.json.status | upper }}
+          ========================================
+          Job ID: {{ job_id }}
+          Started: {{ job_status.json.started }}
+          Finished: {{ job_status.json.finished }}
+          Elapsed: {{ job_status.json.elapsed }} seconds
+          ========================================
+      when: wait_for_completion | bool
+
+- name: Final Summary
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  vars:
+    wait_for_completion: "{{ wait_for_migration | default(false) }}"
+  tags:
+    - always
+  
+  tasks:
+    - name: Display completion summary (with wait)
+      debug:
+        msg: |
+          ========================================
+          END-TO-END MIGRATION COMPLETE!
+          ========================================
+          
+          ✓ Phase 1: AAP installed and configured
+          ✓ Phase 2: Execution environment built
+          ✓ Phase 3: Migration configuration generated
+          ✓ Phase 4: AAP configured via API
+          ✓ Phase 5: Migration job launched and completed
+          
+          {% if hostvars[inventory_hostname].job_status is defined %}
+          Migration Status: {{ hostvars[inventory_hostname].job_status.json.status | upper }}
+          {% if hostvars[inventory_hostname].job_status.json.status == 'successful' %}
+          
+          Next Steps:
+          1. Access OpenStack Horizon dashboard
+          2. Verify migrated VM is running
+          3. Test VM connectivity and functionality
+          4. Migrate additional VMs if needed
+          {% else %}
+          
+          View job output at:
+          {{ hostvars[inventory_hostname].aap_controller_url }}/#/jobs/playbook/{{ hostvars[inventory_hostname].job_id }}/output
+          {% endif %}
+          {% endif %}
+          
+          AAP Dashboard: {{ hostvars[inventory_hostname].aap_controller_url | default('Check AAP route') }}
+          Configuration Summary: ~/{{ migration_config_dir }}/AAP_API_CONFIGURATION_SUMMARY.txt
+          
+          ========================================
+      when: wait_for_completion | bool
+
+    - name: Display completion summary (no wait)
+      debug:
+        msg: |
+          ========================================
+          MIGRATION SETUP AND LAUNCH COMPLETE!
+          ========================================
+          
+          ✓ Phase 1: AAP installed and configured
+          ✓ Phase 2: Execution environment built
+          ✓ Phase 3: Migration configuration generated
+          ✓ Phase 4: AAP configured via API
+          ✓ Phase 5: Migration job launched
+          
+          Migration is running in the background.
+          
+          Monitor progress:
+          1. AAP Web UI: {{ hostvars[inventory_hostname].aap_controller_url | default('Check AAP route') }}
+          2. Job ID: {{ hostvars[inventory_hostname].job_id | default('Check AAP') }}
+          
+          To wait for completion, run with:
+          -e "wait_for_migration=true"
+          
+          Configuration files:
+          - Migration config: ~/{{ migration_config_dir }}/os_migrate_for_aap.yaml
+          - AAP summary: ~/{{ migration_config_dir }}/AAP_API_CONFIGURATION_SUMMARY.txt
+          
+          ========================================
+      when: not (wait_for_completion | bool)
+

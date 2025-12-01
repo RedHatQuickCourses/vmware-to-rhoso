@@ -1,0 +1,178 @@
+---
+# Install and Configure Ansible Automation Platform role
+# Based on install-aap-configure.adoc documentation
+
+- name: Create NFS StorageClass for AAP
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: nfs
+      provisioner: kubernetes.io/no-provisioner
+      reclaimPolicy: Delete
+
+- name: Create NFS PersistentVolume for AAP
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: nfs-pv1
+      spec:
+        accessModes:
+          - ReadWriteOnce
+          - ReadWriteMany
+        capacity:
+          storage: 10Gi
+        nfs:
+          path: "{{ nfs_aap_path }}"
+          server: "{{ nfs_server_ip }}"
+        persistentVolumeReclaimPolicy: Delete
+        storageClassName: nfs
+        volumeMode: Filesystem
+
+- name: Create ansible-automation-platform namespace
+  kubernetes.core.k8s:
+    name: "{{ aap_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Create AAP OperatorGroup
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: ansible-automation-platform-operator
+        namespace: "{{ aap_namespace }}"
+      spec:
+        targetNamespaces:
+          - "{{ aap_namespace }}"
+
+- name: Wait for OperatorGroup to be created
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1
+    kind: OperatorGroup
+    name: ansible-automation-platform-operator
+    namespace: "{{ aap_namespace }}"
+  register: operator_group
+  until: operator_group.resources | length > 0
+  retries: 10
+  delay: 5
+
+- name: Subscribe to ansible-automation-platform-operator
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: ansible-automation-platform
+        namespace: "{{ aap_namespace }}"
+      spec:
+        channel: "{{ aap_channel }}"
+        installPlanApproval: Automatic
+        name: ansible-automation-platform-operator
+        source: redhat-operators
+        sourceNamespace: openshift-marketplace
+
+- name: Wait for AAP operator ClusterServiceVersion to be succeeded
+  kubernetes.core.k8s_info:
+    api_version: operators.coreos.com/v1alpha1
+    kind: ClusterServiceVersion
+    namespace: "{{ aap_namespace }}"
+  register: aap_csv
+  until: >
+    aap_csv.resources | length > 0 and
+    aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | list | length > 0 and
+    (aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | list | first).status.phase == 'Succeeded'
+  retries: 60
+  delay: 10
+
+- name: Display AAP operator installation status
+  debug:
+    msg: |
+      === AAP Operator Installation Status ===
+      CSV Name: {{ (aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | list | first).metadata.name }}
+      CSV Phase: {{ (aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | list | first).status.phase }}
+
+- name: Create AnsibleAutomationPlatform CR
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: aap.ansible.com/v1alpha1
+      kind: AnsibleAutomationPlatform
+      metadata:
+        name: "{{ aap_instance_name }}"
+        namespace: "{{ aap_namespace }}"
+      spec:
+        image_pull_policy: IfNotPresent
+        controller:
+          disabled: false
+        eda:
+          disabled: false
+        hub:
+          disabled: false
+          storage_type: file
+          file_storage_storage_class: nfs
+          file_storage_size: 10Gi
+        lightspeed:
+          disabled: true
+
+- name: Wait for AAP pods to be running (this may take ~10 minutes)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ aap_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/operator-version=2.5"
+  register: aap_pods
+  until: >
+    aap_pods.resources | length > 10 and
+    (aap_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 10
+  retries: 120
+  delay: 10
+
+- name: Get AAP admin password
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ aap_instance_name }}-admin-password"
+    namespace: "{{ aap_namespace }}"
+  register: aap_admin_secret
+
+- name: Decode AAP admin password
+  set_fact:
+    aap_admin_password: "{{ aap_admin_secret.resources[0].data.password | b64decode }}"
+  when: aap_admin_secret.resources | length > 0
+
+- name: Get AAP route
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ aap_namespace }}"
+  register: aap_routes
+
+- name: Extract AAP dashboard URL
+  set_fact:
+    aap_dashboard_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*gateway.*') | list | first).spec.host }}"
+  when: aap_routes.resources | length > 0
+
+- name: Display AAP access information
+  debug:
+    msg: |
+      ========================================
+      AAP Installation Complete!
+      ========================================
+      Dashboard URL: {{ aap_dashboard_url }}
+      Username: admin
+      Password: {{ aap_admin_password }}
+      ========================================
+      Please navigate to the URL and complete the AAP subscription setup.
+      ========================================
+

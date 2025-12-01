@@ -1,0 +1,55 @@
+---
+# Create AAP application token for API access
+# AAP 2.5 requires OAuth tokens for API authentication
+- name: Create AAP Application Token
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aap_controller_url: "https://aap-for-rhoso-migrations-controller-ansible-automation-platform.apps.cluster-wtdd4.dynamic.redhatworkshops.io"
+    aap_admin_password: "Nl1v0YGTQqFw2ra0mWIc0oCm7U2SnSpm"
+  
+  tasks:
+    - name: Try to get CSRF token first
+      uri:
+        url: "{{ aap_controller_url }}/"
+        method: GET
+        validate_certs: false
+        return_content: yes
+      register: csrf_page
+    
+    - name: Extract CSRF token from page
+      set_fact:
+        csrf_token: "{{ csrf_page.content | regex_search('csrfmiddlewaretoken[^>]+value=\"([^\"]+)\"', '\\1') | first }}"
+      when: csrf_page.content is defined
+      failed_when: false
+    
+    - name: Display CSRF token
+      debug:
+        var: csrf_token
+      when: csrf_token is defined
+    
+    - name: Create application token with username/password
+      uri:
+        url: "{{ aap_controller_url }}/api/v2/users/1/personal_tokens/"
+        method: POST
+        body_format: json
+        body:
+          application: null
+          description: "Migration automation token"
+          scope: "write"
+        headers:
+          X-CSRFToken: "{{ csrf_token }}"
+          Referer: "{{ aap_controller_url }}"
+        validate_certs: false
+        status_code: [201]
+        url_username: admin
+        url_password: "{{ aap_admin_password }}"
+        force_basic_auth: yes
+      register: token_result
+      when: csrf_token is defined
+    
+    - name: Display token
+      debug:
+        msg: "Token created: {{ token_result.json.token }}"
+      when: token_result is defined and token_result.json is defined
+

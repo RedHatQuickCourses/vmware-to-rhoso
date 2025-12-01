@@ -1,0 +1,71 @@
+---
+# Debug AAP token authentication
+- name: Debug Token Authentication
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Get token from inventory
+      set_fact:
+        test_token: "{{ aap_api_token }}"
+    
+    - name: Get controller URL
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: ansible-automation-platform
+      register: routes
+    
+    - name: Set controller URL
+      set_fact:
+        controller_url: "https://{{ (routes.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host }}"
+    
+    - name: Test 1 - Try with Authorization Bearer header
+      uri:
+        url: "{{ controller_url }}/api/v2/ping/"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ test_token }}"
+        validate_certs: false
+        status_code: [200, 401]
+      register: test1
+    
+    - name: Test 2 - Try credentials endpoint
+      uri:
+        url: "{{ controller_url }}/api/v2/credentials/"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ test_token }}"
+        validate_certs: false
+        status_code: [200, 401]
+      register: test2
+      
+    - name: Display results
+      debug:
+        msg: |
+          Test 1 (ping): {{ test1.status }}
+          Test 2 (credentials): {{ test2.status }}
+          
+          {% if test2.status == 401 %}
+          Token Type Issue Detected!
+          
+          AAP 2.5 may require an APPLICATION token, not a PERSONAL token.
+          
+          Try creating an Application token instead:
+          1. In AAP UI, go to: Administration → Applications
+          2. Click Add
+          3. Name: Migration Automation
+          4. Organization: Default
+          5. Authorization Grant Type: Resource owner password-based
+          6. Client Type: Confidential
+          7. Save
+          8. Click on the application → Tokens tab
+          9. Create a new token there
+          
+          OR use the awx CLI:
+          awx applications create --name "Migration App" --organization 1 \
+              --client_type confidential --authorization_grant_type password
+          {% else %}
+          ✅ Token is working!
+          {% endif %}
+

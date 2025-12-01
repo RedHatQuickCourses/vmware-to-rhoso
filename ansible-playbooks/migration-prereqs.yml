@@ -1,0 +1,97 @@
+---
+# Migration Prerequisites Playbook
+# This playbook must be run BEFORE installing Ansible Automation Platform
+# It deploys the conversion host in OpenStack as described in prereqs-migration-centos.adoc
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-prereqs.yml -e @credentials.yml
+#
+# Or use the deployment script:
+#   ./deploy-migration-prereqs.sh --inventory inventory/hosts-<guid>.yml --credentials credentials.yml
+
+- name: Deploy Conversion Host in OpenStack
+  hosts: bastion
+  become: false
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  
+  pre_tasks:
+    - name: Verify required variables are defined
+      ansible.builtin.assert:
+        that:
+          - lab_guid is defined
+          - lab_guid != "changeme"
+          - rhoso_conversion_host_ip is defined
+          - rhoso_public_net_start is defined
+          - rhoso_public_net_end is defined
+        fail_msg: |
+          ERROR: Required variables are not defined in your inventory!
+          
+          Please ensure your inventory file (inventory/hosts-<guid>.yml) contains:
+          - lab_guid: "your-guid"
+          - rhoso_conversion_host_ip: "192.168.x.x"
+          - rhoso_public_net_start: "192.168.x.x"
+          - rhoso_public_net_end: "192.168.x.x"
+        success_msg: "✅ All required variables are defined"
+    
+    - name: Display deployment information
+      debug:
+        msg: |
+          ========================================
+          Migration Prerequisites Deployment
+          ========================================
+          Lab GUID: {{ lab_guid }}
+          Conversion Host IP: {{ rhoso_conversion_host_ip }}
+          Public Network Range: {{ rhoso_public_net_start }} - {{ rhoso_public_net_end }}
+          ========================================
+          
+          This playbook will:
+          1. Download CentOS Stream 10 image
+          2. Create OpenStack networks and security groups
+          3. Deploy conversion host VM
+          4. Install VMware VIX disklib
+          
+          ========================================
+  
+  roles:
+    - deploy-conversion-host
+  
+  post_tasks:
+    - name: Display completion summary
+      debug:
+        msg: |
+          ========================================
+          ✅ Migration Prerequisites Complete!
+          ========================================
+          
+          Conversion Host Deployed:
+          - IP Address: {{ rhoso_conversion_host_ip }}
+          - SSH Access: ssh -i ~/.ssh/{{ lab_guid }}key.pem cloud-user@{{ rhoso_conversion_host_ip }}
+          - Status: Ready for VM migration
+          
+          OpenStack Resources Created:
+          ✓ Security group: basic
+          ✓ Networks: public, private
+          ✓ Router: vrouter
+          ✓ Image: centos10-image (CentOS Stream 10)
+          ✓ Flavor: migrate (4GB RAM, 2 vCPU)
+          ✓ Keypair: bastion_key
+          ✓ Server: centos10-ch
+          ✓ Floating IP: {{ rhoso_conversion_host_ip }}
+          
+          Next Steps:
+          ========================================
+          1. Verify conversion host access:
+             ssh -i ~/.ssh/{{ lab_guid }}key.pem cloud-user@{{ rhoso_conversion_host_ip }}
+          
+          2. Proceed with AAP installation:
+             ./deploy-migration-setup.sh --inventory inventory/hosts-{{ lab_guid }}.yml --credentials credentials.yml
+          
+          ========================================
+          
+          Conversion host information saved to:
+          {{ ansible_env.HOME }}/conversion-host-info.txt
+          ========================================
+

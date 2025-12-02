@@ -23,7 +23,7 @@
   shell: |
     oc exec -n {{ aap_namespace }} \
       deployment/{{ aap_instance_name }}-controller-web -- \
-      awx-manage create_oauth2_token --user admin
+      awx-manage create_oauth2_token --user admin --scope write
   register: token_creation
   when: aap_api_token is not defined or aap_api_token | length == 0
   changed_when: true

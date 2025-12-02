@@ -89,8 +89,8 @@
   register: aap_csv
   until: >
     aap_csv.resources | length > 0 and
-    aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | list | length > 0 and
-    (aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | list | first).status.phase == 'Succeeded'
+    aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | selectattr('status', 'defined') | selectattr('status.phase', 'defined') | list | length > 0 and
+    (aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | selectattr('status', 'defined') | selectattr('status.phase', 'defined') | list | first).status.phase == 'Succeeded'
   retries: 60
   delay: 10
 

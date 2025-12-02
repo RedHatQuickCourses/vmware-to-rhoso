@@ -73,10 +73,10 @@ all:
     # REQUIRED: VMware Configuration
     # ========================================
     # VMware vCenter connection details for migration source
-    vcenter_hostname: "vcenter.example.com"             # vCenter hostname/IP
-    vcenter_username: "administrator@vsphere.local"     # vCenter username
-    vcenter_password: "changeme"                        # vCenter password
-    vcenter_datacenter: "Datacenter"                    # vCenter datacenter name
+    vcenter_hostname: {vcenter_console}
+    vcenter_username: {vcenter_full_user}
+    vcenter_password: {vcenter_password}
+    vcenter_datacenter: RS01
     
     # ========================================
     # REQUIRED: OpenStack Server Conversion Host

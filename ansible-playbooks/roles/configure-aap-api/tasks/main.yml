@@ -40,54 +40,18 @@
   retries: 30
   delay: 10
 
-# Step 0.5: Create OAuth2 token for API access (AAP 2.x requires tokens with write scope)
-- name: Check if aap_api_token is already provided
-  set_fact:
-    need_token: "{{ aap_api_token is not defined or aap_api_token | length == 0 }}"
-
-- name: Create OAuth2 token with write scope
-  when: need_token
-  block:
-    - name: Create token via awx-manage
-      ansible.builtin.shell: >-
-        oc exec -n {{ aap_namespace }}
-        deployment/{{ aap_instance_name }}-controller-web --
-        awx-manage create_oauth2_token --user admin
-      register: token_result
-      changed_when: true
-
-    - name: Set aap_api_token from created token
-      set_fact:
-        aap_api_token: "{{ token_result.stdout | trim }}"
-
-    - name: Update token scope to write via Django shell
-      ansible.builtin.shell: >-
-        oc exec -n {{ aap_namespace }}
-        deployment/{{ aap_instance_name }}-controller-web --
-        awx-manage shell -c
-        "from awx.main.models import OAuth2AccessToken; t = OAuth2AccessToken.objects.get(token='{{ aap_api_token }}'); t.scope = 'write'; t.save(); print('Scope updated to:', t.scope)"
-      register: scope_update
-      changed_when: true
-
-    - name: Display token creation result
-      debug:
-        msg: |
-          ✅ OAuth2 token created and scope updated to WRITE!
-          Token (first 20 chars): {{ aap_api_token[:20] }}...
-          Scope update result: {{ scope_update.stdout }}
-          
-          TIP: Add this to your inventory to reuse it:
-          
-          all:
-            vars:
-              aap_api_token: "{{ aap_api_token }}"
+# Step 0.5: Set up authentication - we'll use username/password with awx.awx collection
+# The awx.awx collection handles session auth internally when given username/password
+- name: Note about authentication method
+  debug:
+    msg: "Using admin username/password authentication with awx.awx collection (handles session auth internally)"
 
 - name: Display AAP connection info
   debug:
     msg: |
       AAP Controller URL: {{ aap_controller_url }}
       Admin Username: admin
-      Using OAuth2 token for authentication
+      Using username/password authentication
       Configuring via AWX collection...
 
 # Step 1: Create Credentials (Bastion key)
@@ -107,7 +71,8 @@
       ssh_key_data: "{{ ssh_key_content.content | b64decode }}"
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: bastion_credential
 
@@ -145,7 +110,8 @@
     organization: "Default"
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: inventory_result
 
@@ -169,7 +135,8 @@
       ansible_host: "{{ rhoso_conversion_host_ip }}"
       ansible_ssh_user: cloud-user
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: conversion_host_result
 
@@ -188,7 +155,8 @@
       ansible_connection: local
       ansible_python_interpreter: "{{ '{{' }} ansible_playbook_python {{ '}}' }}"
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: migrator_host_result
 
@@ -205,7 +173,8 @@
     organization: "Default"
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: ee_result
 
@@ -225,7 +194,8 @@
     default_environment: "VMware Migration toolkit execution environment"
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
     wait: false
   register: project_result
@@ -239,7 +209,8 @@
     project: "vmware migration toolkit project"
     wait: false
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: project_update_result
 
@@ -253,8 +224,9 @@
   uri:
     url: "{{ aap_controller_url }}/api/v2/projects/{{ project_result.id }}/"
     method: GET
-    headers:
-      Authorization: "Bearer {{ aap_api_token }}"
+    url_username: "admin"
+    url_password: "{{ aap_admin_password }}"
+    force_basic_auth: true
     validate_certs: false
     status_code: 200
   register: project_status
@@ -315,7 +287,8 @@
     ask_variables_on_launch: true
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: job_template_result
 

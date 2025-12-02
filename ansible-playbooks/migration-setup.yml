@@ -12,6 +12,10 @@
 #   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags install-aap
 #   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags ansible-builder
 #   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags configure-migration
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags configure-aap-for-migration
+#
+# NOTE: configure-aap-for-migration requires AAP license to be uploaded first!
+#       Run this tag separately after uploading the license via AAP UI.
 
 - name: Install and Configure Ansible Automation Platform
   hosts: bastion
@@ -53,7 +57,7 @@
     - configure-migration
     - migration-config
 
-- name: Configure AAP via API (automated setup)
+- name: Configure AAP for VM Migration (requires license - run separately after uploading license)
   hosts: bastion
   become: false
   gather_facts: false
@@ -66,9 +70,8 @@
         name: configure-aap-api
       when: configure_aap_via_api | default(true)
   tags:
-    - configure-aap-api
-    - aap-api
-    - api-config
+    - configure-aap-for-migration
+    - never  # This tag ensures it won't run unless explicitly called
 
 - name: Display completion summary
   hosts: bastion
@@ -78,62 +81,52 @@
     - vars/main.yml
     - vars/migration.yml
   tasks:
-    - name: Show final instructions (API configured)
+    - name: Get AAP Controller route for display
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ aap_namespace }}"
+      register: aap_routes_summary
+      failed_when: false
+
+    - name: Set AAP URL for display
+      set_fact:
+        aap_url_display: "https://{{ (aap_routes_summary.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host | default('Check AAP route') }}"
+      when: aap_routes_summary.resources is defined and aap_routes_summary.resources | length > 0
+      failed_when: false
+
+    - name: Show final instructions
       debug:
         msg: |
           ========================================
-          🎉 VM Migration Setup Complete!
+          🎉 VM Migration Setup - Phase 1 Complete!
           ========================================
           
           What was configured:
           ✅ Ansible Automation Platform installed (17+ pods running)
           ✅ VMware Migration Toolkit Execution Environment built and pushed
           ✅ Migration configuration files created
-          ✅ AAP configured via API:
-             - Credentials (SSH key)
-             - Inventory (Conversion Host)
-             - Project (synced from GitHub)
-             - Job Template (ready to launch)
           
-          🚀 Ready to Migrate!
-          ========================================
-          The job template "Windows VM Migration" has been created and is ready to use.
-          
-          Access AAP and launch migration:
-          1. Open AAP Dashboard (URL shown in configure-aap-api output)
-          2. Navigate to: Resources → Templates
-          3. Find: "Windows VM Migration"
-          4. Click: Launch 🚀
-          
-          The migration will start immediately!
-          ========================================
-      when: configure_aap_via_api | default(true)
-
-    - name: Show final instructions (manual configuration)
-      debug:
-        msg: |
-          ========================================
-          VM Migration Setup Complete!
+          ⚠️  NEXT STEPS REQUIRED:
           ========================================
           
-          What was configured:
-          1. ✓ Ansible Automation Platform installed
-          2. ✓ VMware Migration Toolkit Execution Environment built and pushed
-          3. ✓ Migration configuration files created
+          1. UPLOAD AAP LICENSE (Required before continuing):
+             - Access AAP Dashboard: {{ aap_url_display | default('oc get route -n ansible-automation-platform') }}
+             - Username: admin
+             - Password: Run: oc get secret -n {{ aap_namespace }} {{ aap_instance_name }}-admin-password -o jsonpath='{.data.password}' | base64 -d
+             - Upload your subscription manifest when prompted
           
-          Next Steps (Manual AAP Configuration Required):
-          1. Access AAP Dashboard at: {{ aap_dashboard_url | default('Check AAP route') }}
-             Username: admin
-             Password: (Retrieved from secret)
+          2. CONFIGURE AAP FOR MIGRATION (After license is uploaded):
+             ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags configure-aap-for-migration
           
-          2. Follow the instructions in:
-             {{ ansible_env.HOME }}/{{ migration_config_dir }}/AAP_CONFIGURATION_INSTRUCTIONS.txt
-          
-          3. Configuration file for AAP job template:
-             {{ ansible_env.HOME }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml
+          3. LAUNCH MIGRATION:
+             - Navigate to: Resources → Templates → "Windows VM Migration"
+             - Click: Launch 🚀
           
           ========================================
-      when: not (configure_aap_via_api | default(true))
+          Configuration files saved to:
+          {{ ansible_env.HOME | default('/home/lab-user') }}/{{ migration_config_dir }}/
+          ========================================
   tags:
     - always
 

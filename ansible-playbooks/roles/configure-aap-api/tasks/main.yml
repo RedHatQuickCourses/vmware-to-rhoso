@@ -40,30 +40,42 @@
   retries: 30
   delay: 10
 
-# Step 0.5: Create OAuth2 token for API access (AAP 2.x requires tokens)
+# Step 0.5: Create OAuth2 token for API access (AAP 2.x requires tokens with write scope)
 - name: Check if aap_api_token is already provided
   set_fact:
     need_token: "{{ aap_api_token is not defined or aap_api_token | length == 0 }}"
 
-- name: Create OAuth2 token via awx-manage
+- name: Create OAuth2 token with write scope via Django shell
   when: need_token
   block:
-    - name: Create personal access token via awx-manage in controller pod
+    - name: Create personal access token with write scope via Django shell
       ansible.builtin.shell: |
         oc exec -n {{ aap_namespace }} \
           deployment/{{ aap_instance_name }}-controller-web -- \
-          awx-manage create_oauth2_token --user admin
+          awx-manage shell -c "
+from awx.main.models import User, OAuth2AccessToken
+from oauth2_provider.models import Application
+import secrets
+user = User.objects.get(username='admin')
+token_value = secrets.token_urlsafe(32)
+token = OAuth2AccessToken.objects.create(
+    user=user,
+    scope='write',
+    token=token_value
+)
+print(token_value)
+"
       register: token_result
       changed_when: true
 
     - name: Set aap_api_token from created token
       set_fact:
-        aap_api_token: "{{ token_result.stdout | trim }}"
+        aap_api_token: "{{ token_result.stdout_lines | last | trim }}"
 
     - name: Display token creation result
       debug:
         msg: |
-          ✅ OAuth2 token created successfully via awx-manage!
+          ✅ OAuth2 token created with WRITE scope!
           Token (first 20 chars): {{ aap_api_token[:20] }}...
           
           TIP: Add this to your inventory to reuse it:

@@ -91,7 +91,7 @@
 
     - name: Set AAP URL for display
       set_fact:
-        aap_url_display: "https://{{ (aap_routes_summary.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host | default('Check AAP route') }}"
+        aap_url_display: "https://{{ (aap_routes_summary.resources | selectattr('metadata.name', 'equalto', aap_instance_name) | list | first).spec.host | default('Check AAP route') }}"
       when: aap_routes_summary.resources is defined and aap_routes_summary.resources | length > 0
       failed_when: false
 

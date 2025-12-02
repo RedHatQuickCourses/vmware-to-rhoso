@@ -18,7 +18,7 @@
     
     - name: Set controller URL
       set_fact:
-        controller_url: "https://{{ (routes.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host }}"
+        controller_url: "https://{{ (routes.resources | selectattr('metadata.name', 'equalto', 'aap-for-rhoso-migrations') | list | first).spec.host }}"
     
     - name: Test 1 - Try with Authorization Bearer header
       uri:

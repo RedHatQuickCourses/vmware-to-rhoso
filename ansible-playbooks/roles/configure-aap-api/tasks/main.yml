@@ -28,7 +28,7 @@
 
 - name: Extract AAP Controller URL
   set_fact:
-    aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host }}"
+    aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'equalto', aap_instance_name) | list | first).spec.host }}"
   when: aap_routes.resources | length > 0
 
 - name: Wait for AAP Controller API to be ready

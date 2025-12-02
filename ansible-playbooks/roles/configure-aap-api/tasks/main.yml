@@ -53,7 +53,7 @@
         oc exec -n {{ aap_namespace }}
         deployment/{{ aap_instance_name }}-controller-web --
         awx-manage shell -c
-        "from awx.main.models import User, OAuth2AccessToken; import secrets; user = User.objects.get(username='admin'); token_value = secrets.token_urlsafe(32); OAuth2AccessToken.objects.create(user=user, scope='write', token=token_value); print(token_value)"
+        "from awx.main.models import User, OAuth2AccessToken; from django.utils import timezone; from datetime import timedelta; import secrets; user = User.objects.get(username='admin'); token_value = secrets.token_urlsafe(32); OAuth2AccessToken.objects.create(user=user, scope='write', token=token_value, expires=timezone.now() + timedelta(days=365)); print(token_value)"
       register: token_result
       changed_when: true
 

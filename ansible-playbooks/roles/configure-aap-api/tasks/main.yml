@@ -45,33 +45,25 @@
   set_fact:
     need_token: "{{ aap_api_token is not defined or aap_api_token | length == 0 }}"
 
-- name: Create OAuth2 token via API
+- name: Create OAuth2 token via awx-manage
   when: need_token
   block:
-    - name: Create personal access token via API
-      uri:
-        url: "{{ aap_controller_url }}/api/v2/users/1/personal_tokens/"
-        method: POST
-        body_format: json
-        body:
-          application: null
-          description: "Migration automation token - {{ ansible_date_time.iso8601 | default('auto') }}"
-          scope: "write"
-        validate_certs: false
-        status_code: [201]
-        url_username: admin
-        url_password: "{{ aap_admin_password }}"
-        force_basic_auth: true
+    - name: Create personal access token via awx-manage in controller pod
+      ansible.builtin.shell: |
+        oc exec -n {{ aap_namespace }} \
+          deployment/{{ aap_instance_name }}-controller-web -- \
+          awx-manage create_oauth2_token --user admin
       register: token_result
+      changed_when: true
 
     - name: Set aap_api_token from created token
       set_fact:
-        aap_api_token: "{{ token_result.json.token }}"
+        aap_api_token: "{{ token_result.stdout | trim }}"
 
     - name: Display token creation result
       debug:
         msg: |
-          ✅ OAuth2 token created successfully!
+          ✅ OAuth2 token created successfully via awx-manage!
           Token (first 20 chars): {{ aap_api_token[:20] }}...
           
           TIP: Add this to your inventory to reuse it:

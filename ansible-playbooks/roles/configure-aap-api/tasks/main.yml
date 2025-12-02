@@ -3,51 +3,10 @@
 # This role uses the official AWX Ansible collection which handles authentication properly
 # Documentation: https://docs.ansible.com/ansible/latest/collections/awx/awx/
 
-# Step 0: Install awxkit and create OAuth2 token if needed
-- name: Check if awxkit is installed
-  shell: pip3 list --user | grep awxkit
-  register: awxkit_check
-  failed_when: false
-  changed_when: false
-
-- name: Install awxkit for token management
-  shell: pip3 install awxkit --user
-  when: awxkit_check.rc != 0
-
-- name: Check if aap_api_token is already defined
+# Step 0: Get AAP credentials and connection info
+- name: Note about authentication
   debug:
-    msg: "Using existing aap_api_token from inventory"
-  when: aap_api_token is defined and aap_api_token | length > 0
-
-- name: Create OAuth2 token via awx-manage if not defined
-  shell: |
-    oc exec -n {{ aap_namespace }} \
-      deployment/{{ aap_instance_name }}-controller-web -- \
-      awx-manage create_oauth2_token --user admin --scope write
-  register: token_creation
-  when: aap_api_token is not defined or aap_api_token | length == 0
-  changed_when: true
-
-- name: Set aap_api_token from created token
-  set_fact:
-    aap_api_token: "{{ token_creation.stdout | trim }}"
-  when: aap_api_token is not defined or aap_api_token | length == 0
-
-- name: Display token creation result
-  debug:
-    msg: |
-      {% if token_creation.changed | default(false) %}
-      ✅ OAuth2 token created: {{ aap_api_token[:20] }}...
-      
-      IMPORTANT: Add this to your inventory to reuse it:
-      
-      all:
-        vars:
-          aap_api_token: "{{ aap_api_token }}"
-      {% else %}
-      ✅ Using existing OAuth2 token from inventory
-      {% endif %}
-  when: aap_api_token is defined
+    msg: "Using admin username/password for AAP API authentication"
 
 - name: Get AAP admin password from secret
   kubernetes.core.k8s_info:
@@ -109,9 +68,8 @@
       ssh_key_data: "{{ ssh_key_content.content | b64decode }}"
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token | default(omit) }}"
-    controller_username: "{{ 'admin' if aap_api_token is not defined else omit }}"
-    controller_password: "{{ aap_admin_password if aap_api_token is not defined else omit }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: bastion_credential
 
@@ -149,9 +107,8 @@
     organization: "Default"
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token | default(omit) }}"
-    controller_username: "{{ 'admin' if aap_api_token is not defined else omit }}"
-    controller_password: "{{ aap_admin_password if aap_api_token is not defined else omit }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: inventory_result
 
@@ -175,9 +132,8 @@
       ansible_host: "{{ rhoso_conversion_host_ip }}"
       ansible_ssh_user: cloud-user
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token | default(omit) }}"
-    controller_username: "{{ 'admin' if aap_api_token is not defined else omit }}"
-    controller_password: "{{ aap_admin_password if aap_api_token is not defined else omit }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: conversion_host_result
 
@@ -196,9 +152,8 @@
       ansible_connection: local
       ansible_python_interpreter: "{{ '{{' }} ansible_playbook_python {{ '}}' }}"
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token | default(omit) }}"
-    controller_username: "{{ 'admin' if aap_api_token is not defined else omit }}"
-    controller_password: "{{ aap_admin_password if aap_api_token is not defined else omit }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: migrator_host_result
 
@@ -215,9 +170,8 @@
     organization: "Default"
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token | default(omit) }}"
-    controller_username: "{{ 'admin' if aap_api_token is not defined else omit }}"
-    controller_password: "{{ aap_admin_password if aap_api_token is not defined else omit }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: ee_result
 
@@ -237,9 +191,8 @@
     default_environment: "VMware Migration toolkit execution environment"
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token | default(omit) }}"
-    controller_username: "{{ 'admin' if aap_api_token is not defined else omit }}"
-    controller_password: "{{ aap_admin_password if aap_api_token is not defined else omit }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
     wait: false
   register: project_result
@@ -253,9 +206,8 @@
     project: "vmware migration toolkit project"
     wait: false
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token | default(omit) }}"
-    controller_username: "{{ 'admin' if aap_api_token is not defined else omit }}"
-    controller_password: "{{ aap_admin_password if aap_api_token is not defined else omit }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: project_update_result
 
@@ -269,8 +221,9 @@
   uri:
     url: "{{ aap_controller_url }}/api/v2/projects/{{ project_result.id }}/"
     method: GET
-    headers:
-      Authorization: "Bearer {{ aap_api_token }}"
+    user: "admin"
+    password: "{{ aap_admin_password }}"
+    force_basic_auth: true
     validate_certs: false
     status_code: 200
   register: project_status
@@ -331,9 +284,8 @@
     ask_variables_on_launch: true
     state: present
     controller_host: "{{ aap_controller_url }}"
-    controller_oauthtoken: "{{ aap_api_token | default(omit) }}"
-    controller_username: "{{ 'admin' if aap_api_token is not defined else omit }}"
-    controller_password: "{{ aap_admin_password if aap_api_token is not defined else omit }}"
+    controller_username: "admin"
+    controller_password: "{{ aap_admin_password }}"
     validate_certs: false
   register: job_template_result
 

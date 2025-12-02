@@ -4,7 +4,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    aap_namespace: "ansible-automation-platform"
+    aap_namespace: "aap"
   
   tasks:
     - name: Test 1 - Get actual routes

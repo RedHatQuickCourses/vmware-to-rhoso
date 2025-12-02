@@ -150,7 +150,7 @@
          - Name: VMware Migration toolkit execution environment
          - Image: <AAP_HUB_REGISTRY_URL>/{{ ee_image_name }}:{{ ee_image_tag }}
            Note: Get registry URL with: oc get route -n {{ aap_namespace }} | grep hub
-           Example: aap-for-rhoso-migrations-hub-ansible-automation-platform.apps.cluster-xxxx.dynamic.redhatworkshops.io/rhospvmt-ee:latest
+           Example: aap-for-rhoso-migrations-hub-aap.apps.cluster-xxxx.dynamic.redhatworkshops.io/rhospvmt-ee:latest
          - Click: Create Execution Environment
       
       6. CREATE PROJECT

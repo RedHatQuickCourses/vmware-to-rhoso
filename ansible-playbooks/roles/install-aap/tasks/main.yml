@@ -34,7 +34,7 @@
         storageClassName: nfs
         volumeMode: Filesystem
 
-- name: Create ansible-automation-platform namespace
+- name: Create AAP namespace
   kubernetes.core.k8s:
     name: "{{ aap_namespace }}"
     api_version: v1

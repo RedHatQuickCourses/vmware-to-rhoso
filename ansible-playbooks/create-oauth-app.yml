@@ -11,7 +11,7 @@
         api_version: v1
         kind: Secret
         name: aap-for-rhoso-migrations-admin-password
-        namespace: ansible-automation-platform
+        namespace: aap
       register: aap_secret
     
     - name: Set admin password
@@ -22,7 +22,7 @@
       kubernetes.core.k8s_info:
         api_version: route.openshift.io/v1
         kind: Route
-        namespace: ansible-automation-platform
+        namespace: aap
       register: routes
     
     - name: Set controller URL
@@ -31,7 +31,7 @@
     
     - name: Try creating OAuth2 application using django admin
       ansible.builtin.shell: |
-        oc exec -n ansible-automation-platform \
+        oc exec -n aap \
           deployment/aap-for-rhoso-migrations-controller-web -- \
           awx-manage shell << 'PYEOF'
         from django.contrib.auth.models import User

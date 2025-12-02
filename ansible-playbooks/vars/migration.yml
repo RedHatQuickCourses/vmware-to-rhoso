@@ -3,7 +3,7 @@
 # These variables are used by the migration-setup.yml playbook
 
 # AAP Configuration
-aap_namespace: "ansible-automation-platform"
+aap_namespace: "aap"
 aap_channel: "stable-2.5"
 aap_instance_name: "aap-for-rhoso-migrations"
 

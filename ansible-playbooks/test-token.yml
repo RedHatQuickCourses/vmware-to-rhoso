@@ -17,7 +17,7 @@
       kubernetes.core.k8s_info:
         api_version: route.openshift.io/v1
         kind: Route
-        namespace: ansible-automation-platform
+        namespace: aap
       register: routes
     
     - name: Set controller URL

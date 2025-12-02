@@ -111,7 +111,7 @@
           ========================================
           
           1. UPLOAD AAP LICENSE (Required before continuing):
-             - Access AAP Dashboard: {{ aap_url_display | default('oc get route -n ansible-automation-platform') }}
+             - Access AAP Dashboard: {{ aap_url_display | default('oc get route -n aap') }}
              - Username: admin
              - Password: Run: oc get secret -n {{ aap_namespace }} {{ aap_instance_name }}-admin-password -o jsonpath='{.data.password}' | base64 -d
              - Upload your subscription manifest when prompted

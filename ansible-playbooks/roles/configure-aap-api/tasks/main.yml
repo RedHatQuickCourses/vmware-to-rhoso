@@ -45,27 +45,36 @@
   set_fact:
     need_token: "{{ aap_api_token is not defined or aap_api_token | length == 0 }}"
 
-- name: Create OAuth2 token with write scope via Django shell
+- name: Create OAuth2 token with write scope
   when: need_token
   block:
-    - name: Create personal access token with write scope via Django shell
+    - name: Create token via awx-manage
       ansible.builtin.shell: >-
         oc exec -n {{ aap_namespace }}
         deployment/{{ aap_instance_name }}-controller-web --
-        awx-manage shell -c
-        "from awx.main.models import User, OAuth2AccessToken; from django.utils import timezone; from datetime import timedelta; import secrets; user = User.objects.get(username='admin'); token_value = secrets.token_urlsafe(32); OAuth2AccessToken.objects.create(user=user, scope='write', token=token_value, expires=timezone.now() + timedelta(days=365)); print(token_value)"
+        awx-manage create_oauth2_token --user admin
       register: token_result
       changed_when: true
 
     - name: Set aap_api_token from created token
       set_fact:
-        aap_api_token: "{{ token_result.stdout_lines | last | trim }}"
+        aap_api_token: "{{ token_result.stdout | trim }}"
+
+    - name: Update token scope to write via Django shell
+      ansible.builtin.shell: >-
+        oc exec -n {{ aap_namespace }}
+        deployment/{{ aap_instance_name }}-controller-web --
+        awx-manage shell -c
+        "from awx.main.models import OAuth2AccessToken; t = OAuth2AccessToken.objects.get(token='{{ aap_api_token }}'); t.scope = 'write'; t.save(); print('Scope updated to:', t.scope)"
+      register: scope_update
+      changed_when: true
 
     - name: Display token creation result
       debug:
         msg: |
-          ✅ OAuth2 token created with WRITE scope!
+          ✅ OAuth2 token created and scope updated to WRITE!
           Token (first 20 chars): {{ aap_api_token[:20] }}...
+          Scope update result: {{ scope_update.stdout }}
           
           TIP: Add this to your inventory to reuse it:
           

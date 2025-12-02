@@ -26,9 +26,14 @@
     namespace: "{{ aap_namespace }}"
   register: aap_routes
 
-- name: Extract AAP Controller URL
+- name: Extract AAP Controller URL (for API calls)
   set_fact:
-    aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'equalto', aap_instance_name) | list | first).spec.host }}"
+    aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host }}"
+  when: aap_routes.resources | length > 0
+
+- name: Extract AAP Gateway URL (for UI access)
+  set_fact:
+    aap_gateway_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'equalto', aap_instance_name) | list | first).spec.host }}"
   when: aap_routes.resources | length > 0
 
 - name: Wait for AAP Controller API to be ready
@@ -58,7 +63,8 @@
 - name: Display AAP connection info
   debug:
     msg: |
-      AAP Controller URL: {{ aap_controller_url }}
+      AAP Dashboard URL: {{ aap_gateway_url }}
+      AAP Controller API: {{ aap_controller_url }}
       Admin Username: admin
       OAuth2 Token created successfully
       Configuring via AWX collection...
@@ -324,7 +330,7 @@
       
       🎯 Next Steps:
       ========================================
-      1. Access AAP Dashboard: {{ aap_controller_url }}
+      1. Access AAP Dashboard: {{ aap_gateway_url }}
          - Username: admin
          - Password: {{ aap_admin_password }}
       
@@ -355,7 +361,8 @@
       AAP Configuration Summary (AWX Collection)
       ========================================
       Configuration Date: {{ current_timestamp.stdout }}
-      AAP Controller URL: {{ aap_controller_url }}
+      AAP Dashboard URL: {{ aap_gateway_url }}
+      AAP Controller API: {{ aap_controller_url }}
       Method: awx.awx Ansible Collection
       
       Created Resources:
@@ -402,7 +409,7 @@
       
       Option 1: AAP Web UI
       ---------------------
-      1. Navigate to: {{ aap_controller_url }}
+      1. Navigate to: {{ aap_gateway_url }}
       2. Login: admin / {{ aap_admin_password }}
       3. Go to: Resources → Templates
       4. Find: "Windows VM Migration"

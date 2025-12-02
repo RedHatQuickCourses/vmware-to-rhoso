@@ -103,7 +103,7 @@ collections:
   - name: vmware.vmware_rest
     version: 4.9.0
   - name: os_migrate.vmware_migration_kit
-    version: ">1.0.0"
+    version: ">2.1.0"
 EOF
 ----
 

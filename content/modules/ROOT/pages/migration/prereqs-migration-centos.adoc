@@ -1,4 +1,4 @@
-= Install pre-requisites
+= Install pre-requisites using CentOS Stream 10
 
 == Infrastructure Components in the Migration Process
 

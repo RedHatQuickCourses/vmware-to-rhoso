@@ -18,11 +18,38 @@
     oc project openstack
   changed_when: false
 
-- name: Get OpenStack security group ID
+- name: Get OpenStack security group ID (basic)
   ansible.builtin.shell: |
-    oc exec -t openstackclient -- openstack security group list | awk '/ basic / {print $2}'
-  register: security_group_id
+    oc exec -t openstackclient -- openstack security group show basic -f value -c id 2>/dev/null || echo ""
+  register: security_group_basic
   changed_when: false
+  failed_when: false
+
+- name: Get OpenStack default security group ID (fallback)
+  ansible.builtin.shell: |
+    oc exec -t openstackclient -- openstack security group show default -f value -c id 2>/dev/null || echo ""
+  register: security_group_default
+  changed_when: false
+  failed_when: false
+  when: security_group_basic.stdout | trim == ""
+
+- name: Set security group ID
+  ansible.builtin.set_fact:
+    security_group_id:
+      stdout: "{{ security_group_basic.stdout if (security_group_basic.stdout | trim != '') else (security_group_default.stdout | default('')) }}"
+
+- name: Fail if no security group found
+  ansible.builtin.fail:
+    msg: |
+      ERROR: No security group found!
+      
+      The 'basic' security group was not found. This is created by the migration-prereqs.yml playbook.
+      
+      Please run the migration prerequisites first:
+        ansible-playbook migration-prereqs.yml -i inventory/hosts-migration-<guid>.yml
+      
+      Or manually create a security group named 'basic' in OpenStack.
+  when: security_group_id.stdout | trim == ""
 
 - name: Get OpenStack project ID
   ansible.builtin.shell: |

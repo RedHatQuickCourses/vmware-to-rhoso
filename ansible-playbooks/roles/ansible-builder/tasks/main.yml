@@ -170,8 +170,27 @@
 - name: Authenticate to AAP internal registry
   ansible.builtin.command:
     cmd: podman login {{ aap_hub_registry_url }} -u admin -p {{ aap_registry_password }}
-  when: push_to_aap_registry | default(true)
+  when: 
+    - push_to_aap_registry | default(true)
+    - aap_registry_password is defined
   no_log: true
+
+- name: Fail if AAP registry password not found
+  ansible.builtin.fail:
+    msg: |
+      Could not retrieve AAP admin password from secret '{{ aap_instance_name }}-admin-password' 
+      in namespace '{{ aap_namespace }}'. 
+      
+      Please verify:
+      1. AAP is deployed and running in the '{{ aap_namespace }}' namespace
+      2. The secret '{{ aap_instance_name }}-admin-password' exists
+      3. You have access to the OpenShift cluster (run 'oc whoami' to verify)
+      
+      To check the secret exists, run:
+        oc get secret {{ aap_instance_name }}-admin-password -n {{ aap_namespace }}
+  when:
+    - push_to_aap_registry | default(true)
+    - aap_registry_password is not defined
 
 - name: Push execution environment to AAP internal registry
   ansible.builtin.command:

@@ -1,0 +1,61 @@
+---
+# Variables for VM Migration with Ansible Automation Platform
+# These variables are used by the migration-setup.yml playbook
+
+# AAP Configuration
+aap_namespace: "aap"
+aap_channel: "stable-2.5"
+aap_instance_name: "aap-for-rhoso-migrations"
+
+# Ansible Builder Configuration
+ansible_builder_work_dir: "ansible-builder-workspace"
+ee_image_name: "rhospvmt-ee"
+ee_image_tag: "latest"
+
+# Registry Configuration
+push_to_aap_registry: true
+# Note: aap_registry_url is dynamically determined from AAP Hub route
+
+# Alternative: Push to OCP registry instead
+# push_to_aap_registry: false
+# push_to_ocp_registry: true
+# ocp_registry_url: "default-route-openshift-image-registry.apps.cluster-{{ guid }}.dynamic.redhatworkshops.io"
+# ocp_registry_project: "aap"
+
+# Red Hat Automation Hub Token (optional, for private automation hub)
+# Get your token from: https://console.redhat.com/ansible/automation-hub/token/
+redhat_automation_hub_token: ""
+
+# Migration Configuration
+migration_config_dir: "os-migrate-env"
+
+# VMware Configuration
+# These should be provided in your inventory
+# The values below use the inventory variable names directly
+# vcenter_hostname, vcenter_username, vcenter_password, vcenter_datacenter
+# These variables are defined in your inventory file and used directly by templates
+
+# Conversion Host Configuration
+# IP address of the OpenStack conversion host (typically the compute node)
+# This value is used in AAP inventory and migration configuration
+# IMPORTANT: This MUST be defined in your inventory file (hosts-<guid>.yml)
+# Example: rhoso_conversion_host_ip: "192.168.7.122"
+# Note: No default value - must come from inventory
+
+# Conversion Host Network Configuration (for deployment)
+# These values are used when deploying the conversion host with migration-prereqs.yml
+# Override in inventory if needed
+conversion_host_gateway: "192.168.0.1"
+conversion_host_public_cidr: "192.168.0.0/16"
+conversion_host_private_cidr: "10.0.0.0/24"
+conversion_host_dns: "8.8.8.8"
+
+# VMs to migrate (can be overridden in inventory or extra vars)
+vms_to_migrate:
+  - "haproxy-{{ guid }}"
+
+# AAP API Configuration
+# Set to true to configure AAP automatically via API (recommended)
+# Set to false to generate instructions for manual configuration
+configure_aap_via_api: true
+

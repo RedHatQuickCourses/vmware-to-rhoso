@@ -1,0 +1,441 @@
+---
+# Configure AAP via API for VM Migration using awx.awx collection
+# This role uses the official AWX Ansible collection which handles authentication properly
+# Documentation: https://docs.ansible.com/ansible/latest/collections/awx/awx/
+#
+# PREREQUISITE: AAP must have a valid license/subscription before running this role
+
+# Step 0: Get AAP credentials and connection info
+- name: Get AAP admin password from secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ aap_instance_name }}-admin-password"
+    namespace: "{{ aap_namespace }}"
+  register: aap_admin_secret
+
+- name: Decode AAP admin password
+  set_fact:
+    aap_admin_password: "{{ aap_admin_secret.resources[0].data.password | b64decode }}"
+  when: aap_admin_secret.resources | length > 0
+
+- name: Get AAP Controller route
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ aap_namespace }}"
+  register: aap_routes
+
+- name: Extract AAP Controller URL (for API calls)
+  set_fact:
+    aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host }}"
+  when: aap_routes.resources | length > 0
+
+- name: Extract AAP Gateway URL (for UI access)
+  set_fact:
+    aap_gateway_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'equalto', aap_instance_name) | list | first).spec.host }}"
+  when: aap_routes.resources | length > 0
+
+- name: Wait for AAP Controller API to be ready
+  uri:
+    url: "{{ aap_controller_url }}/api/v2/ping/"
+    method: GET
+    validate_certs: false
+    status_code: 200
+  register: aap_ping
+  until: aap_ping.status == 200
+  retries: 30
+  delay: 10
+
+# Step 0.5: Create OAuth2 token using awx-manage
+- name: Create OAuth2 token via awx-manage
+  ansible.builtin.shell: |
+    oc exec -n {{ aap_namespace }} \
+      deployment/{{ aap_instance_name }}-controller-web -- \
+      awx-manage create_oauth2_token --user admin
+  register: token_result
+  changed_when: true
+
+- name: Set aap_api_token from created token
+  set_fact:
+    aap_api_token: "{{ token_result.stdout | trim }}"
+
+- name: Display AAP connection info
+  debug:
+    msg: |
+      AAP Dashboard URL: {{ aap_gateway_url }}
+      AAP Controller API: {{ aap_controller_url }}
+      Admin Username: admin
+      OAuth2 Token created successfully
+      Configuring via AWX collection...
+
+# Step 1: Create Credentials (Bastion key)
+- name: Read SSH private key content
+  slurp:
+    src: "/home/lab-user/.ssh/{{ guid }}key.pem"
+  register: ssh_key_content
+
+- name: Create Bastion SSH Credential
+  awx.awx.credential:
+    name: "Bastion key"
+    description: "SSH key for bastion access"
+    organization: "Default"
+    credential_type: "Machine"
+    inputs:
+      username: "cloud-user"
+      ssh_key_data: "{{ ssh_key_content.content | b64decode }}"
+    state: present
+    controller_host: "{{ aap_controller_url }}"
+    controller_oauthtoken: "{{ aap_api_token }}"
+    validate_certs: false
+  register: bastion_credential
+
+- name: Display credential creation result
+  debug:
+    msg: "Bastion credential created with ID: {{ bastion_credential.id | default('already exists') }}"
+
+# Step 1.5: Get AAP Hub registry URL for execution environment
+- name: Get AAP Hub route for registry
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ aap_namespace }}"
+  register: aap_hub_route
+
+- name: Extract AAP Hub registry URL
+  set_fact:
+    aap_hub_registry_url: "{{ item.spec.host }}"
+  when: 
+    - "'hub' in item.metadata.name"
+    - "'hub-web-svc' in item.spec.to.name"
+  loop: "{{ aap_hub_route.resources }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Display AAP Hub registry URL
+  debug:
+    msg: "AAP Hub Registry URL: {{ aap_hub_registry_url }}"
+
+# Step 2: Create Inventory
+- name: Create Conversion Host Inventory
+  awx.awx.inventory:
+    name: "Conversion Host Inventory"
+    description: "Inventory for VM migration conversion hosts"
+    organization: "Default"
+    state: present
+    controller_host: "{{ aap_controller_url }}"
+    controller_oauthtoken: "{{ aap_api_token }}"
+    validate_certs: false
+  register: inventory_result
+
+- name: Display inventory creation result
+  debug:
+    msg: "Inventory created with ID: {{ inventory_result.id | default('already exists') }}"
+
+- name: Wait a moment for inventory to be fully ready
+  pause:
+    seconds: 2
+  when: inventory_result.changed | default(false)
+
+# Step 3: Create Host - conversion_host
+- name: Create conversion_host in inventory
+  awx.awx.host:
+    name: "conversion_host"
+    description: "OpenStack conversion host"
+    inventory: "Conversion Host Inventory"
+    state: present
+    variables:
+      ansible_host: "{{ rhoso_conversion_host_ip }}"
+      ansible_ssh_user: cloud-user
+    controller_host: "{{ aap_controller_url }}"
+    controller_oauthtoken: "{{ aap_api_token }}"
+    validate_certs: false
+  register: conversion_host_result
+
+- name: Display conversion host creation result
+  debug:
+    msg: "Conversion host created: {{ conversion_host_result.name | default('already exists') }} (IP: {{ rhoso_conversion_host_ip }})"
+
+# Step 4: Create Host - migrator
+- name: Create migrator host in inventory
+  awx.awx.host:
+    name: "migrator"
+    description: "Local migration orchestrator"
+    inventory: "Conversion Host Inventory"
+    state: present
+    variables:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ '{{' }} ansible_playbook_python {{ '}}' }}"
+    controller_host: "{{ aap_controller_url }}"
+    controller_oauthtoken: "{{ aap_api_token }}"
+    validate_certs: false
+  register: migrator_host_result
+
+- name: Display migrator host creation result
+  debug:
+    msg: "Migrator host created: {{ migrator_host_result.name | default('already exists') }}"
+
+# Step 5: Create Execution Environment
+- name: Create VMware Migration Toolkit Execution Environment
+  awx.awx.execution_environment:
+    name: "VMware Migration toolkit execution environment"
+    description: "Execution environment for VMware to RHOSO migration"
+    image: "{{ aap_hub_registry_url }}/{{ ee_image_name }}:{{ ee_image_tag }}"
+    organization: "Default"
+    state: present
+    controller_host: "{{ aap_controller_url }}"
+    controller_oauthtoken: "{{ aap_api_token }}"
+    validate_certs: false
+  register: ee_result
+
+- name: Display execution environment creation result
+  debug:
+    msg: "Execution environment created with ID: {{ ee_result.id | default('already exists') }}"
+
+# Step 6: Create Project
+- name: Create VMware migration toolkit project
+  awx.awx.project:
+    name: "vmware migration toolkit project"
+    description: "VMware to RHOSO migration toolkit"
+    organization: "Default"
+    scm_type: git
+    scm_url: "https://github.com/os-migrate/vmware-migration-kit"
+    scm_update_on_launch: true
+    default_environment: "VMware Migration toolkit execution environment"
+    state: present
+    controller_host: "{{ aap_controller_url }}"
+    controller_oauthtoken: "{{ aap_api_token }}"
+    validate_certs: false
+    wait: false
+  register: project_result
+
+- name: Display project creation result
+  debug:
+    msg: "Project created with ID: {{ project_result.id | default('already exists') }}"
+
+- name: Trigger project sync from Git
+  awx.awx.project_update:
+    project: "vmware migration toolkit project"
+    wait: false
+    controller_host: "{{ aap_controller_url }}"
+    controller_oauthtoken: "{{ aap_api_token }}"
+    validate_certs: false
+  register: project_update_result
+
+- name: Display project sync notice
+  debug:
+    msg: |
+      Project sync triggered. Waiting for GitHub repository to sync...
+      This typically takes 1-3 minutes.
+
+- name: Wait for project to complete sync (2 minute timeout)
+  uri:
+    url: "{{ aap_controller_url }}/api/v2/projects/{{ project_result.id }}/"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ aap_api_token }}"
+    validate_certs: false
+    status_code: 200
+  register: project_status
+  until: >
+    project_status.json.status == "successful" or 
+    project_status.json.status == "failed" or
+    project_status.json.last_job_run is not none
+  retries: 24
+  delay: 5
+  ignore_errors: true
+
+- name: Display project sync status
+  debug:
+    msg: |
+      {% if project_status.json.status == "successful" %}
+      ✅ Project synced successfully from GitHub!
+      {% elif project_status.json.status == "failed" %}
+      ❌ Project sync failed. Job template will be created but may not work until project is fixed.
+      {% else %}
+      ⚠️  Project sync still in progress (status: {{ project_status.json.status | default('unknown') }})
+      Job template will be created with scm_update_on_launch=true
+      {% endif %}
+
+# Step 7: Read migration configuration for job template extra vars
+- name: Get home directory
+  shell: echo $HOME
+  register: home_dir
+  changed_when: false
+
+- name: Check if migration configuration file exists
+  stat:
+    path: "{{ home_dir.stdout }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml"
+  register: migration_config_file
+
+- name: Read migration configuration file
+  slurp:
+    src: "{{ home_dir.stdout }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml"
+  register: migration_config_content
+  when: migration_config_file.stat.exists
+
+- name: Parse migration configuration
+  set_fact:
+    migration_extra_vars: "{{ (migration_config_content.content | b64decode | from_yaml) if migration_config_file.stat.exists else {} }}"
+
+# Step 8: Create Job Template
+- name: Create HAproxy VM Migration Job Template
+  awx.awx.job_template:
+    name: "HAproxy VM Migration"
+    description: "Migrate HAproxy VMs from VMware to RHOSO"
+    job_type: "run"
+    inventory: "Conversion Host Inventory"
+    project: "vmware migration toolkit project"
+    playbook: "playbooks/migration.yml"
+    execution_environment: "VMware Migration toolkit execution environment"
+    credentials:
+      - "Bastion key"
+    extra_vars: "{{ migration_extra_vars }}"
+    ask_variables_on_launch: true
+    state: present
+    controller_host: "{{ aap_controller_url }}"
+    controller_oauthtoken: "{{ aap_api_token }}"
+    validate_certs: false
+  register: job_template_result
+
+- name: Display job template creation result
+  debug:
+    msg: |
+      {% if job_template_result.failed | default(false) %}
+      ❌ Job template creation failed: {{ job_template_result.msg | default('Unknown error') }}
+      
+      Please check:
+      - Project sync status in AAP UI
+      - Playbook exists at playbooks/migration.yml in the GitHub repository
+      {% else %}
+      ✅ Job template "HAproxy VM Migration" created successfully!
+         ID: {{ job_template_result.id | default('already exists') }}
+      {% endif %}
+
+- name: Display AAP configuration summary
+  debug:
+    msg: |
+      ========================================
+      AAP Configuration Complete via AWX Collection!
+      ========================================
+      
+      ✅ Created Resources:
+      ├─ Credential: Bastion key (SSH Machine)
+      ├─ Inventory: Conversion Host Inventory
+      │  ├─ Host: conversion_host ({{ rhoso_conversion_host_ip }})
+      │  └─ Host: migrator (localhost)
+      ├─ Execution Environment: VMware Migration toolkit execution environment
+      ├─ Project: vmware migration toolkit project (synced from GitHub)
+      └─ Job Template: HAproxy VM Migration (READY TO USE)
+      
+      🎯 Next Steps:
+      ========================================
+      1. Access AAP Dashboard: {{ aap_gateway_url }}
+         - Username: admin
+         - Password: {{ aap_admin_password }}
+      
+      2. Navigate to: Resources → Templates → "HAproxy VM Migration"
+      
+      3. Click "Launch" 🚀 to start the VM migration!
+      
+      Migration Target: {{ vms_list[0].name | default('VM configured in extra_vars') }}
+      ========================================
+
+- name: Ensure config directory exists
+  ansible.builtin.file:
+    path: "{{ home_dir.stdout }}/{{ migration_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Get current timestamp
+  shell: date -u +"%Y-%m-%dT%H:%M:%SZ"
+  register: current_timestamp
+  changed_when: false
+
+- name: Save AAP configuration summary
+  ansible.builtin.copy:
+    dest: "{{ home_dir.stdout }}/{{ migration_config_dir }}/AAP_AWX_CONFIGURATION_SUMMARY.txt"
+    mode: '0644'
+    content: |
+      ========================================
+      AAP Configuration Summary (AWX Collection)
+      ========================================
+      Configuration Date: {{ current_timestamp.stdout }}
+      AAP Dashboard URL: {{ aap_gateway_url }}
+      AAP Controller API: {{ aap_controller_url }}
+      Method: awx.awx Ansible Collection
+      
+      Created Resources:
+      ==================
+      
+      1. CREDENTIAL: Bastion key
+         - Type: Machine (SSH)
+         - Username: cloud-user
+         - SSH Key: /home/lab-user/.ssh/{{ guid }}key.pem
+      
+      2. INVENTORY: Conversion Host Inventory
+         - Organization: Default
+         
+      Hosts:
+      ------
+      a) conversion_host
+         - ansible_host: {{ rhoso_conversion_host_ip }}
+         - ansible_ssh_user: cloud-user
+         
+         b) migrator
+            - ansible_connection: local
+            - ansible_python_interpreter: '{{ '{{' }} ansible_playbook_python {{ '}}' }}'
+      
+      3. EXECUTION ENVIRONMENT: VMware Migration toolkit execution environment
+         - Image: {{ aap_hub_registry_url }}/{{ ee_image_name }}:{{ ee_image_tag }}
+         - Organization: Default
+      
+      4. PROJECT: vmware migration toolkit project
+         - SCM Type: Git
+         - SCM URL: https://github.com/os-migrate/vmware-migration-kit
+         - Update on Launch: Yes
+         - Default EE: VMware Migration toolkit execution environment
+      
+      5. JOB TEMPLATE: HAproxy VM Migration
+         - Playbook: playbooks/migration.yml
+         - Inventory: Conversion Host Inventory
+         - Project: vmware migration toolkit project
+         - Execution Environment: VMware Migration toolkit execution environment
+         - Credentials: Bastion key
+      
+      ========================================
+      How to Launch Migration
+      ========================================
+      
+      Option 1: AAP Web UI
+      ---------------------
+      1. Navigate to: {{ aap_gateway_url }}
+      2. Login: admin / {{ aap_admin_password }}
+      3. Go to: Resources → Templates
+      4. Find: "HAproxy VM Migration"
+      5. Click: Launch icon (🚀)
+      
+      Option 2: Ansible Playbook
+      --------------------------
+      ansible-playbook -i inventory/hosts-{{ guid }}.yml launch-migration.yml
+      
+      Option 3: Complete End-to-End
+      -----------------------------
+      ansible-playbook -i inventory/hosts-{{ guid }}.yml migration-complete.yml \
+        -e @credentials.yml -e "wait_for_migration=true"
+      
+      ========================================
+      Migration Configuration
+      ========================================
+      
+      Configuration file: {{ home_dir.stdout }}/{{ migration_config_dir }}/os_migrate_for_aap.yaml
+      
+      VMs to migrate:
+      {% for vm in vms_to_migrate %}
+      - {{ vm }}
+      {% endfor %}
+      
+      VMware vCenter: {{ vcenter_hostname }}
+      OpenStack Conversion Host: {{ rhoso_conversion_host_ip }}
+      
+      ========================================

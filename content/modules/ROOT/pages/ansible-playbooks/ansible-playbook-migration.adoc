@@ -1,0 +1,152 @@
+= Migration preparation using Ansible playbooks
+
+== Overview
+
+This documentation covers the automated preparation of a lab environment for migration using Ansible playbooks. The playbooks provide a complete automation solution for preparing a lab environment for migration.
+
+== Credentials Required
+
+* **Red Hat Registry**: Access to registry.redhat.io
+* **VMware vCenter**: Access to VMware vCenter
+
+== Access Your Lab Environment
+
+. Access to the bastion executing the following command: 
++
+[source,bash,role=execute,subs=attributes]
+----
+ssh {bastion_ssh_user_name}@{bastion_public_hostname} -p {bastion_ssh_port} 
+----
++
+SSH password is `{bastion_ssh_password}`. The uuid of your lab is: `{guid}`
+. Optionally copy your public SSH key to the bastion allowing you to authenticate with the server without entering a password every time you connect: 
++
+[source,bash,role=execute,subs=attributes]
+----
+ssh-copy-id -p {bastion_ssh_port} {bastion_ssh_user_name}@{bastion_public_hostname} 
+----
++
+
+If needed, you can navigate to the OpenShift console URL: {openshift_cluster_console_url}[{openshift_cluster_console_url}^] using user `admin` and password `{openshift_cluster_admin_password}`
+
+== Quick Start
+
+=== Configure Inventory
+
+Edit `inventory/hosts-{guid}.yml` with your environment details:
+
+[source,yaml,role=execute,subs=attributes]
+----
+cat << EOF > inventory/hosts-migration-{guid}.yml
+
+all:
+  vars:
+    # ========================================
+    # REQUIRED: Lab Environment
+    # ========================================
+    lab_guid: "{guid}"  # Your lab GUID (e.g., "wtdd4", "abc123")
+    
+    # ========================================
+    # REQUIRED: Red Hat Credentials
+    # ========================================
+    # Red Hat Registry credentials (for pulling container images)
+    # Get service account from: https://access.redhat.com/terms-based-registry/
+    registry_username: ""  # Format: "12345678|myserviceaccount"
+    registry_password: ""  # Long token starting with "eyJhbGciOiJSUzUxMiJ9..."
+    
+    # ========================================
+    # REQUIRED: VMware Configuration
+    # ========================================
+    # VMware vCenter connection details for migration source
+    vcenter_hostname: {vcenter_console}
+    vcenter_username: {vcenter_full_user}
+    vcenter_password: {vcenter_password}
+    vcenter_datacenter: RS01
+    
+    # ========================================
+    # REQUIRED: OpenStack Server Conversion Host
+    # ========================================
+    # IP address of the OpenStack server that will be used as the conversion host where VMs will be converted
+    # The conversion host server will be deployed by the playbooks.
+    rhoso_conversion_host_ip: "{rhoso_conversion_host_ip}"  # Your server conversion host IP
+    
+    # Public network allocation range for OpenStack
+    # Used when deploying the conversion host with migration-prereqs.yml
+    rhoso_public_net_start: "{rhoso_public_net_start}"    # Start of public IP range
+    rhoso_public_net_end: "{rhoso_public_net_end}"      # End of public IP range
+    
+    # ========================================
+    # OPTIONAL: AAP API Token
+    # ========================================
+    # If not provided, a token will be automatically created during deployment
+    # To reuse an existing token (faster), uncomment and add it here:
+    # aap_api_token: "your-token-here"
+    
+    # ========================================
+    # OPTIONAL: Red Hat Automation Hub Token
+    # ========================================
+    # Only needed if using private automation hub for certified collections
+    # Get your token from: https://console.redhat.com/ansible/automation-hub/token/
+    redhat_automation_hub_token: ""
+
+# ========================================
+# Bastion Host (Where Playbooks Run)
+# ========================================
+bastion:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "/usr/bin/python3.11"
+
+EOF
+----
+
+=== Get your Automation Hub Token
+
+. Navigate to Ansible Automation Platform on the Red Hat Hybrid Cloud Console at https://console.redhat.com/ansible/automation-hub/token/
+. Under *Offline token*, click *Load Token*
+. Click the *Copy to clipboard* icon to copy the offline token
+. Paste the token into a file and store in a secure location as `redhat_automation_hub_token` in the `ansible-playbooks` directory
+
+=== Configure Credentials
+
+[NOTE]
+====
+Fill in the values for registry_username and registry_password, these are the credentials to access the Red Hat registry.
+Fill in the value for redhat_automation_hub_token, this is the token to access the Red Hat Automation Hub.
+====
+
+Edit `credentials.yml` with your environment details:
+
+[source,yaml,role=execute,subs=attributes]
+----
+cat << EOF > credentials.yml
+registry_username: "12345678|myserviceaccount"
+registry_password: "eyJhbGciOiJSUzUxMiJ9..."
+redhat_automation_hub_token: "{{ redhat_automation_hub_token }}"
+EOF
+----
+
+=== Deploy Migration Setup
+
+Execute the following command to deploy the migration setup:
+
+[source,bash,role=execute,subs=attributes]
+----
+./deploy-migration-setup.sh --inventory inventory/hosts-migration-{guid}.yml --credentials credentials.yml
+----
+
+=== Login to AAP and upload the license
+
+. Navigate to the AAP console at {aap_url}[{aap_url}^]
+. Login as admin using the password provided in the output of the deployment
+. Upload the license file
+
+=== Configure AAP for migration
+
+Execute the following command to configure AAP for migration:
+
+[source,bash,role=execute,subs=attributes]
+----
+./deploy-migration-setup.sh --inventory inventory/hosts-migration-{guid}.yml --credentials credentials.yml --configure-aap
+----

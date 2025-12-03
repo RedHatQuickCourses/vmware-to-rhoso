@@ -1,0 +1,132 @@
+---
+# Main playbook for setting up VM Migration with Ansible Automation Platform
+# This playbook automates the following documentation:
+# 1. install-aap-configure.adoc - Install and configure AAP
+# 2. ansible-builder.adoc - Build execution environment
+# 3. migrate-vm-with-aap.adoc - Configure AAP for VM migration
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml
+#
+# To run specific parts only, use tags:
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags install-aap
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags ansible-builder
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags configure-migration
+#   ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags configure-aap-for-migration
+#
+# NOTE: configure-aap-for-migration requires AAP license to be uploaded first!
+#       Run this tag separately after uploading the license via AAP UI.
+
+- name: Install and Configure Ansible Automation Platform
+  hosts: bastion
+  become: false
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  roles:
+    - install-aap
+  tags:
+    - install-aap
+    - aap
+
+- name: Build VMware Migration Toolkit Execution Environment
+  hosts: bastion
+  become: false
+  gather_facts: true
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  roles:
+    - ansible-builder
+  tags:
+    - ansible-builder
+    - builder
+    - execution-environment
+
+- name: Configure AAP for VM Migration (generate config files)
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  roles:
+    - configure-aap-migration
+  tags:
+    - configure-migration
+    - migration-config
+
+- name: Configure AAP for VM Migration (requires license - run separately after uploading license)
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  tasks:
+    - name: Include configure-aap-api role
+      include_role:
+        name: configure-aap-api
+      when: configure_aap_via_api | default(true)
+  tags:
+    - configure-aap-for-migration
+    - never  # This tag ensures it won't run unless explicitly called
+
+- name: Display completion summary
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  tasks:
+    - name: Get AAP Controller route for display
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ aap_namespace }}"
+      register: aap_routes_summary
+      failed_when: false
+
+    - name: Set AAP URL for display (main gateway, not controller)
+      set_fact:
+        aap_url_display: "https://{{ (aap_routes_summary.resources | selectattr('metadata.name', 'equalto', aap_instance_name) | list | first).spec.host | default('Check AAP route') }}"
+      when: aap_routes_summary.resources is defined and aap_routes_summary.resources | length > 0
+      failed_when: false
+
+    - name: Show final instructions
+      debug:
+        msg: |
+          ========================================
+          🎉 VM Migration Setup - Phase 1 Complete!
+          ========================================
+          
+          What was configured:
+          ✅ Ansible Automation Platform installed (17+ pods running)
+          ✅ VMware Migration Toolkit Execution Environment built and pushed
+          ✅ Migration configuration files created
+          
+          ⚠️  NEXT STEPS REQUIRED:
+          ========================================
+          
+          1. UPLOAD AAP LICENSE (Required before continuing):
+             - Access AAP Dashboard: {{ aap_url_display | default('oc get route -n aap') }}
+             - Username: admin
+             - Password: Run: oc get secret -n {{ aap_namespace }} {{ aap_instance_name }}-admin-password -o jsonpath='{.data.password}' | base64 -d
+             - Upload your subscription manifest when prompted
+          
+          2. CONFIGURE AAP FOR MIGRATION (After license is uploaded):
+             ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags configure-aap-for-migration
+          
+          3. LAUNCH MIGRATION:
+             - Navigate to: Resources → Templates → "HAproxy VM Migration"
+             - Click: Launch 🚀
+          
+          ========================================
+          Configuration files saved to:
+          {{ ansible_env.HOME | default('/home/lab-user') }}/{{ migration_config_dir }}/
+          ========================================
+  tags:
+    - always
+

@@ -3,6 +3,7 @@
 # Based on the lab environment configuration from the AsciiDoc documentation
 
 # Lab Environment Configuration
+# The 'lab_guid' variable MUST be defined in your inventory file
 guid: "{{ lab_guid | default('changeme') }}"
 bastion_ssh_user_name: "{{ bastion_user | default('lab-user') }}"
 bastion_public_hostname: "{{ bastion_hostname | default('bastion.example.com') }}"

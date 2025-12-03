@@ -38,7 +38,7 @@ In the bastion:
 
 [source,bash,role=execute]
 ----
-curl -o rhel9-6.qcow2 "$URL_FROM_ACCESS_REDHAT_COM"
+curl -o rhel9.qcow2 "$URL_FROM_ACCESS_REDHAT_COM"
 ----
 
 Copy the bastion public key to the openstackclient pod:
@@ -47,10 +47,10 @@ Copy the bastion public key to the openstackclient pod:
 oc cp /home/lab-user/.ssh/{guid}key.pub openstack/openstackclient:/home/cloud-admin/.
 ----
 
-Copy the RHEL 9.6 (or latest qcow image to the openstackclient pod:
+Copy the RHEL 9 latest qcow image to the openstackclient pod:
 [source,bash,role=execute]
 ----
-oc cp /home/lab-user/rhel9-6.qcow2 openstack/openstackclient:/home/cloud-admin/.
+oc cp /home/lab-user/rhel9.qcow2 openstack/openstackclient:/home/cloud-admin/.
 ----
 
 Access to the openstackclient pod
@@ -97,7 +97,7 @@ Create image and flavors
 ----
 openstack flavor create --ram 4096 --disk 35 --vcpu 2 --public migrate
 openstack keypair create --public-key ~/{guid}key.pub bastion_key
-openstack image create rhel96-image --container-format bare --disk-format qcow2 --public --file rhel9-6.qcow2
+openstack image create rhel-image --container-format bare --disk-format qcow2 --public --file rhel9.qcow2
 ----
 
 Create the Server and a Floating IP
@@ -106,7 +106,7 @@ Create the Server and a Floating IP
 ----
 openstack server create \
     --flavor migrate --key-name bastion_key --network private --security-group basic \
-    --image rhel96-image rhel96-ch
+    --image rhel-image rhel-ch
 openstack floating ip create public --floating-ip-addres {rhoso_conversion_host_ip}
 ----
 
@@ -114,7 +114,7 @@ Add the floating IP above to the new VM in the next step.
 
 [source,bash,role=execute,subs=attributes]
 ----
-openstack server add floating ip rhel96-ch {rhoso_conversion_host_ip}
+openstack server add floating ip rhel-ch {rhoso_conversion_host_ip}
 ----
 
 Make sure the VM is running.
@@ -131,7 +131,7 @@ openstack server list
 +--------------------------------------+-------------+--------+----------------------------------+----------------+---------+
 | ID                                   | Name        | Status | Networks                         | Image          | Flavor  |
 +--------------------------------------+-------------+--------+----------------------------------+----------------+---------+
-| b037521d-b583-4ac0-9906-73ad9c0624dd | rhel96-ch | ACTIVE | private=10.0.0.252, {rhoso_conversion_host_ip} | rhel96-image | migrate |
+| b037521d-b583-4ac0-9906-73ad9c0624dd | rhel-ch | ACTIVE | private=10.0.0.252, {rhoso_conversion_host_ip} | rhel-image | migrate |
 +--------------------------------------+-------------+--------+----------------------------------+----------------+---------+
 ----
 

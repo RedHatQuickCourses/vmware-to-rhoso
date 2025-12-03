@@ -1,0 +1,57 @@
+---
+# Test playbook to verify route detection logic
+- name: Test AAP Route Detection
+  hosts: localhost
+  gather_facts: false
+  vars:
+    aap_namespace: "aap"
+  
+  tasks:
+    - name: Test 1 - Get actual routes
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ aap_namespace }}"
+      register: aap_routes
+    
+    - name: Display routes found
+      debug:
+        msg: "Found {{ aap_routes.resources | length }} routes"
+    
+    - name: Display route names
+      debug:
+        msg: "Route names: {{ aap_routes.resources | map(attribute='metadata.name') | list }}"
+      when: aap_routes.resources | length > 0
+    
+    - name: Test 2 - Find gateway or controller route
+      set_fact:
+        aap_gateway_route: "{{ aap_routes.resources | selectattr('metadata.name', 'search', 'gateway|controller') | list }}"
+      when: aap_routes.resources | length > 0
+    
+    - name: Display matched routes
+      debug:
+        msg: "Matched {{ aap_gateway_route | length }} routes: {{ aap_gateway_route | map(attribute='metadata.name') | list }}"
+      when: aap_gateway_route is defined
+    
+    - name: Test 3 - Extract URL from route
+      set_fact:
+        aap_dashboard_url: "https://{{ aap_gateway_route[0].spec.host }}"
+      when: 
+        - aap_routes.resources | length > 0
+        - aap_gateway_route is defined
+        - aap_gateway_route | length > 0
+    
+    - name: Test 4 - Set fallback if no route
+      set_fact:
+        aap_dashboard_url: "AAP route not yet available - check with: oc get routes -n {{ aap_namespace }}"
+      when: aap_gateway_route is not defined or aap_gateway_route | length == 0
+    
+    - name: Display final result
+      debug:
+        msg: |
+          ========================================
+          Route Detection Test Results
+          ========================================
+          Dashboard URL: {{ aap_dashboard_url }}
+          ========================================
+

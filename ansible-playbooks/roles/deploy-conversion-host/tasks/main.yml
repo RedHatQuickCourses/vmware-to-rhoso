@@ -1,0 +1,303 @@
+---
+# Deploy Conversion Host in OpenStack
+# Based on prereqs-migration-centos.adoc documentation
+
+# Step 1: Download CentOS Stream 10 image
+- name: Check if CentOS Stream 10 image already exists
+  ansible.builtin.stat:
+    path: "{{ ansible_env.HOME }}/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2"
+  register: centos_image_file
+
+- name: Download CentOS Stream 10 qcow2 image
+  ansible.builtin.get_url:
+    url: "https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2"
+    dest: "{{ ansible_env.HOME }}/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2"
+    mode: '0644'
+  when: not centos_image_file.stat.exists
+  register: image_download
+
+- name: Display image download status
+  debug:
+    msg: |
+      {% if image_download.changed %}
+      ✅ CentOS Stream 10 image downloaded successfully
+      {% else %}
+      ℹ️  CentOS Stream 10 image already exists, skipping download
+      {% endif %}
+
+# Step 2: Copy bastion public key to openstackclient pod
+- name: Copy bastion public key to openstackclient pod
+  kubernetes.core.k8s_cp:
+    namespace: openstack
+    pod: openstackclient
+    remote_path: "/home/cloud-admin/{{ lab_guid }}key.pub"
+    local_path: "{{ ansible_env.HOME }}/.ssh/{{ lab_guid }}key.pub"
+    state: to_pod
+  register: key_copy
+
+- name: Display key copy status
+  debug:
+    msg: "✅ Bastion public key copied to openstackclient pod"
+
+# Step 3: Copy CentOS Stream 10 image to openstackclient pod
+- name: Copy CentOS Stream 10 image to openstackclient pod
+  kubernetes.core.k8s_cp:
+    namespace: openstack
+    pod: openstackclient
+    remote_path: "/home/cloud-admin/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2"
+    local_path: "{{ ansible_env.HOME }}/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2"
+    state: to_pod
+  register: image_copy
+
+- name: Display image copy status
+  debug:
+    msg: "✅ CentOS Stream 10 image copied to openstackclient pod"
+
+# Step 4: Create OpenStack resources (networks, security groups, etc.)
+- name: Create OpenStack setup script
+  ansible.builtin.copy:
+    dest: "{{ ansible_env.HOME }}/setup-conversion-host.sh"
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+      
+      # Network configuration
+      export GATEWAY={{ conversion_host_gateway | default('192.168.0.1') }}
+      export PUBLIC_NETWORK_CIDR={{ conversion_host_public_cidr | default('192.168.0.0/16') }}
+      export PRIVATE_NETWORK_CIDR={{ conversion_host_private_cidr | default('10.0.0.0/24') }}
+      export PUBLIC_NET_START={{ rhoso_public_net_start }}
+      export PUBLIC_NET_END={{ rhoso_public_net_end }}
+      export DNS_SERVER={{ conversion_host_dns | default('8.8.8.8') }}
+      export CONVERSION_HOST_IP={{ rhoso_conversion_host_ip }}
+      export LAB_GUID={{ lab_guid }}
+      
+      echo "========================================="
+      echo "Creating OpenStack Networks and Security Groups"
+      echo "========================================="
+      
+      # Check if security group already exists
+      if ! openstack security group show basic &>/dev/null; then
+        echo "Creating security group 'basic'..."
+        openstack security group create basic
+        openstack security group rule create basic --protocol tcp --dst-port 22:22 --remote-ip 0.0.0.0/0
+        openstack security group rule create --protocol icmp basic
+        openstack security group rule create --protocol udp --dst-port 53:53 basic
+      else
+        echo "Security group 'basic' already exists"
+      fi
+      
+      # Check if public network already exists
+      if ! openstack network show public &>/dev/null; then
+        echo "Creating public network..."
+        openstack network create --external --provider-physical-network datacentre --provider-network-type flat public
+        openstack subnet create public-net \
+          --subnet-range $PUBLIC_NETWORK_CIDR \
+          --no-dhcp \
+          --dns-nameserver $DNS_SERVER \
+          --gateway $GATEWAY \
+          --allocation-pool start=$PUBLIC_NET_START,end=$PUBLIC_NET_END \
+          --network public
+      else
+        echo "Public network already exists"
+      fi
+      
+      # Check if private network already exists
+      if ! openstack network show private &>/dev/null; then
+        echo "Creating private network..."
+        openstack network create --internal private
+        openstack subnet create private-net \
+          --subnet-range $PRIVATE_NETWORK_CIDR \
+          --dns-nameserver $DNS_SERVER \
+          --network private
+      else
+        echo "Private network already exists"
+      fi
+      
+      # Check if router already exists
+      if ! openstack router show vrouter &>/dev/null; then
+        echo "Creating router..."
+        openstack router create vrouter
+        openstack router set vrouter --external-gateway public
+        openstack router add subnet vrouter private-net
+      else
+        echo "Router 'vrouter' already exists"
+      fi
+      
+      echo "========================================="
+      echo "Creating Images and Flavors"
+      echo "========================================="
+      
+      # Check if flavor already exists
+      if ! openstack flavor show migrate &>/dev/null; then
+        echo "Creating flavor 'migrate'..."
+        openstack flavor create --ram 4096 --disk 35 --vcpu 2 --public migrate
+      else
+        echo "Flavor 'migrate' already exists"
+      fi
+      
+      # Check if keypair already exists
+      if ! openstack keypair show bastion_key &>/dev/null; then
+        echo "Creating keypair 'bastion_key'..."
+        openstack keypair create --public-key ~/${LAB_GUID}key.pub bastion_key
+      else
+        echo "Keypair 'bastion_key' already exists"
+      fi
+      
+      # Check if image already exists
+      if ! openstack image show centos10-image &>/dev/null; then
+        echo "Creating image 'centos10-image'..."
+        openstack image create centos10-image \
+          --container-format bare \
+          --disk-format qcow2 \
+          --public \
+          --file CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2
+      else
+        echo "Image 'centos10-image' already exists"
+      fi
+      
+      echo "========================================="
+      echo "Creating Conversion Host Server"
+      echo "========================================="
+      
+      # Check if server already exists
+      if ! openstack server show centos10-ch &>/dev/null; then
+        echo "Creating server 'centos10-ch'..."
+        openstack server create \
+          --flavor migrate \
+          --key-name bastion_key \
+          --network private \
+          --security-group basic \
+          --image centos10-image \
+          centos10-ch
+        
+        # Wait for server to be active
+        echo "Waiting for server to become ACTIVE..."
+        timeout=300
+        elapsed=0
+        while [ $elapsed -lt $timeout ]; do
+          status=$(openstack server show centos10-ch -f value -c status)
+          if [ "$status" == "ACTIVE" ]; then
+            echo "Server is ACTIVE"
+            break
+          fi
+          echo "Server status: $status (waiting...)"
+          sleep 10
+          elapsed=$((elapsed + 10))
+        done
+      else
+        echo "Server 'centos10-ch' already exists"
+      fi
+      
+      # Check if floating IP already exists
+      if ! openstack floating ip show $CONVERSION_HOST_IP &>/dev/null; then
+        echo "Creating floating IP $CONVERSION_HOST_IP..."
+        openstack floating ip create public --floating-ip-address $CONVERSION_HOST_IP
+      else
+        echo "Floating IP $CONVERSION_HOST_IP already exists"
+      fi
+      
+      # Add floating IP to server
+      echo "Adding floating IP to server..."
+      openstack server add floating ip centos10-ch $CONVERSION_HOST_IP 2>/dev/null || echo "Floating IP already assigned"
+      
+      echo "========================================="
+      echo "Conversion Host Deployment Complete!"
+      echo "========================================="
+      openstack server list
+      echo ""
+      echo "Conversion Host IP: $CONVERSION_HOST_IP"
+      echo "========================================="
+
+- name: Copy setup script to openstackclient pod
+  kubernetes.core.k8s_cp:
+    namespace: openstack
+    pod: openstackclient
+    remote_path: "/home/cloud-admin/setup-conversion-host.sh"
+    local_path: "{{ ansible_env.HOME }}/setup-conversion-host.sh"
+    state: to_pod
+
+- name: Execute conversion host setup in openstackclient pod
+  kubernetes.core.k8s_exec:
+    namespace: openstack
+    pod: openstackclient
+    command: /bin/bash /home/cloud-admin/setup-conversion-host.sh
+  register: setup_output
+
+- name: Display setup output
+  debug:
+    msg: "{{ setup_output.stdout_lines }}"
+
+# Step 5: Wait for conversion host to be accessible
+- name: Wait for conversion host to be accessible via SSH
+  ansible.builtin.wait_for:
+    host: "{{ rhoso_conversion_host_ip }}"
+    port: 22
+    delay: 10
+    timeout: 300
+    state: started
+  register: ssh_wait
+
+- name: Display SSH accessibility status
+  debug:
+    msg: "✅ Conversion host is accessible via SSH at {{ rhoso_conversion_host_ip }}"
+
+# Step 6: Install VMware VIX disklib on conversion host
+- name: Install VMware VIX disklib on conversion host
+  ansible.builtin.shell: |
+    ssh -o StrictHostKeyChecking=no -i {{ ansible_env.HOME }}/.ssh/{{ lab_guid }}key.pem \
+      cloud-user@{{ rhoso_conversion_host_ip }} \
+      'sudo dnf install -y https://repo.storware.eu/vprotect/current/el9/vmware-vix-disklib-8.0.0-20521017.el9.x86_64.rpm'
+  register: vix_install
+  changed_when: "'Installing' in vix_install.stdout or 'Installed' in vix_install.stdout"
+
+- name: Display VIX installation status
+  debug:
+    msg: |
+      ✅ VMware VIX disklib installed on conversion host
+      
+      Conversion Host Details:
+      - IP Address: {{ rhoso_conversion_host_ip }}
+      - SSH Access: ssh -i ~/.ssh/{{ lab_guid }}key.pem cloud-user@{{ rhoso_conversion_host_ip }}
+      - Status: Ready for VM migration
+
+- name: Save conversion host information
+  ansible.builtin.copy:
+    dest: "{{ ansible_env.HOME }}/conversion-host-info.txt"
+    mode: '0644'
+    content: |
+      ========================================
+      Conversion Host Information
+      ========================================
+      Deployment Date: {{ ansible_date_time.iso8601 }}
+      
+      Conversion Host Details:
+      - Name: centos10-ch
+      - IP Address: {{ rhoso_conversion_host_ip }}
+      - Image: CentOS Stream 10
+      - Flavor: migrate (4GB RAM, 2 vCPU, 35GB disk)
+      - Security Group: basic
+      - Network: private (with floating IP)
+      
+      SSH Access:
+      ssh -i ~/.ssh/{{ lab_guid }}key.pem cloud-user@{{ rhoso_conversion_host_ip }}
+      
+      Installed Software:
+      - VMware VIX disklib 8.0.0
+      
+      OpenStack Resources Created:
+      - Security Group: basic
+      - Network: public (external)
+      - Network: private (internal)
+      - Subnet: public-net ({{ conversion_host_public_cidr | default('192.168.0.0/16') }})
+      - Subnet: private-net ({{ conversion_host_private_cidr | default('10.0.0.0/24') }})
+      - Router: vrouter
+      - Flavor: migrate
+      - Keypair: bastion_key
+      - Image: centos10-image
+      - Server: centos10-ch
+      - Floating IP: {{ rhoso_conversion_host_ip }}
+      
+      Status: ✅ Ready for VM Migration
+      ========================================
+

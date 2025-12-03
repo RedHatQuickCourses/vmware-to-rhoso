@@ -281,3 +281,91 @@ When modifying these playbooks:
 3. Add proper error handling and verification steps
 4. Update documentation for any new variables or requirements
 5. Test thoroughly in a lab environment before production use
+
+## VM Migration Setup
+
+After deploying RHOSO, you can set up VM migration from VMware to RHOSO using Ansible Automation Platform (AAP).
+
+### Quick Start for Migration
+
+```bash
+# 1. Add VMware credentials to your inventory file
+vi inventory/hosts-<guid>.yml
+# Add: vcenter_hostname, vcenter_username, vcenter_password, vcenter_datacenter, rhoso_conversion_host_ip
+
+# 2. Run complete migration setup (DEFAULT - deploys everything)
+./deploy-migration-setup.sh --inventory inventory/hosts-<guid>.yml --credentials credentials.yml
+
+# This deploys:
+# - Conversion Host (OpenStack VM)
+# - Ansible Automation Platform
+# - Execution Environment
+# - AAP Configuration (via API)
+```
+
+### Deployment Modes
+
+The deployment script supports three modes:
+
+1. **Full Deployment (DEFAULT)** - Deploys everything from scratch:
+   ```bash
+   ./deploy-migration-setup.sh --inventory <inv> --credentials <cred>
+   # OR explicitly:
+   ./deploy-migration-setup.sh --inventory <inv> --credentials <cred> --full
+   ```
+
+2. **Prerequisites Only** - Deploy conversion host only:
+   ```bash
+   ./deploy-migration-setup.sh --inventory <inv> --credentials <cred> --prereqs
+   ```
+
+3. **Skip Prerequisites** - Deploy AAP only (if conversion host exists):
+   ```bash
+   ./deploy-migration-setup.sh --inventory <inv> --credentials <cred> --skip-prereqs
+   ```
+
+### What Gets Deployed
+
+The migration setup automates:
+
+1. **Conversion Host** - OpenStack VM with VMware VIX disklib (Prerequisites)
+2. **Ansible Automation Platform** - AAP 2.5 on OpenShift with 17+ pods
+3. **Execution Environment** - VMware Migration Toolkit container image
+4. **AAP Configuration** - Automated setup via API:
+   - Credentials (SSH keys)
+   - Inventory (conversion_host, migrator)
+   - Project (synced from GitHub)
+   - Job Template (ready to launch)
+
+### Documentation
+
+For detailed migration setup documentation, see:
+
+- **[Migration Quick Start Guide](MIGRATION_QUICK_START.md)** - Fast track guide
+- **[Migration Setup README](README-migration-setup.md)** - Comprehensive documentation
+- **[Migration Implementation Summary](MIGRATION_SETUP_SUMMARY.md)** - Technical details
+
+### Advanced: Using Tags
+
+For selective deployment of specific components:
+
+```bash
+# Install AAP only (requires --skip-prereqs if conversion host exists)
+./deploy-migration-setup.sh --inventory <inv> --credentials <cred> --tags install-aap --skip-prereqs
+
+# Build execution environment only
+./deploy-migration-setup.sh --inventory <inv> --credentials <cred> --tags ansible-builder --skip-prereqs
+
+# Configure AAP via API only
+./deploy-migration-setup.sh --inventory <inv> --credentials <cred> --tags configure-aap-api --skip-prereqs
+
+# Skip AAP installation (if already installed)
+./deploy-migration-setup.sh --inventory <inv> --credentials <cred> --skip-tags install-aap
+```
+
+**Available Tags:**
+- `prereqs` / `conversion-host` - Conversion host deployment
+- `install-aap` - AAP installation
+- `ansible-builder` - Execution environment build
+- `configure-migration` - Migration configuration files
+- `configure-aap-api` - AAP API configuration

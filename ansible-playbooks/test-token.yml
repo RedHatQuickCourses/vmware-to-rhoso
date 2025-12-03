@@ -1,0 +1,56 @@
+---
+# Test if the AAP token works
+- name: Test AAP Token
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Read inventory to get token
+      set_fact:
+        aap_token_test: "{{ aap_api_token | default('NOT_FOUND') }}"
+    
+    - name: Display token (first/last 5 chars only)
+      debug:
+        msg: "Token: {{ aap_token_test[:5] }}...{{ aap_token_test[-5:] if aap_token_test != 'NOT_FOUND' else 'NOT_FOUND' }}"
+    
+    - name: Get AAP Controller URL
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: aap
+      register: routes
+    
+    - name: Set controller URL
+      set_fact:
+        controller_url: "https://{{ (routes.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host }}"
+    
+    - name: Test token with simple API call
+      uri:
+        url: "{{ controller_url }}/api/v2/me/"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ aap_token_test }}"
+        validate_certs: false
+        status_code: [200, 401]
+      register: token_test
+    
+    - name: Display result
+      debug:
+        msg: |
+          {% if token_test.status == 200 %}
+          ✅ SUCCESS! Token is valid
+          User: {{ token_test.json.username | default('unknown') }}
+          {% else %}
+          ❌ FAILED! Token is invalid or expired
+          Status: {{ token_test.status }}
+          Error: {{ token_test.json.detail | default('Unknown error') }}
+          
+          Please create a new token in AAP UI:
+          1. Login to {{ controller_url }}
+          2. Go to Users → admin → Tokens
+          3. Click Add
+          4. Set Scope: Write
+          5. Copy the new token
+          6. Update inventory: aap_api_token: "new-token"
+          {% endif %}
+

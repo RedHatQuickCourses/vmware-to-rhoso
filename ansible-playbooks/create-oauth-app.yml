@@ -1,0 +1,118 @@
+---
+# Create OAuth2 application in AAP for token-based authentication
+# This is required for AAP 2.5 API access
+- name: Create OAuth2 Application in AAP
+  hosts: localhost
+  gather_facts: false
+  
+  tasks:
+    - name: Get AAP admin password
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: aap-for-rhoso-migrations-admin-password
+        namespace: aap
+      register: aap_secret
+    
+    - name: Set admin password
+      set_fact:
+        admin_pass: "{{ aap_secret.resources[0].data.password | b64decode }}"
+    
+    - name: Get AAP Controller route
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: aap
+      register: routes
+    
+    - name: Set controller URL
+      set_fact:
+        controller_url: "https://{{ (routes.resources | selectattr('metadata.name', 'match', '.*controller.*') | list | first).spec.host }}"
+    
+    - name: Try creating OAuth2 application using django admin
+      ansible.builtin.shell: |
+        oc exec -n aap \
+          deployment/aap-for-rhoso-migrations-controller-web -- \
+          awx-manage shell << 'PYEOF'
+        from django.contrib.auth.models import User
+        from oauth2_provider.models import Application
+        
+        # Get admin user
+        admin_user = User.objects.get(username='admin')
+        
+        # Create or get OAuth2 application
+        app, created = Application.objects.get_or_create(
+            name='Migration Automation',
+            defaults={
+                'user': admin_user,
+                'client_type': 'confidential',
+                'authorization_grant_type': 'password',
+            }
+        )
+        
+        print(f"Application: {app.name}")
+        print(f"Client ID: {app.client_id}")
+        print(f"Client Secret: {app.client_secret}")
+        print(f"Created: {created}")
+        PYEOF
+      register: oauth_app
+      changed_when: "'Created: True' in oauth_app.stdout"
+    
+    - name: Display OAuth app details
+      debug:
+        var: oauth_app.stdout_lines
+    
+    - name: Extract client credentials
+      set_fact:
+        client_id: "{{ oauth_app.stdout | regex_search('Client ID: (.+)', '\\1') | first }}"
+        client_secret: "{{ oauth_app.stdout | regex_search('Client Secret: (.+)', '\\1') | first }}"
+      when: oauth_app.rc == 0
+    
+    - name: Get OAuth2 token using password grant
+      uri:
+        url: "{{ controller_url }}/api/o/token/"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: password
+          username: admin
+          password: "{{ admin_pass }}"
+          client_id: "{{ client_id }}"
+          client_secret: "{{ client_secret }}"
+        validate_certs: false
+        status_code: [200, 400, 401]
+      register: token_response
+      when: client_id is defined
+    
+    - name: Display token result
+      debug:
+        msg: |
+          {% if token_response.status == 200 %}
+          ✅ SUCCESS! Got OAuth2 token
+          
+          Access Token: {{ token_response.json.access_token[:20] }}...
+          Token Type: {{ token_response.json.token_type }}
+          Expires In: {{ token_response.json.expires_in }} seconds
+          
+          Add this to your inventory:
+          aap_api_token: "{{ token_response.json.access_token }}"
+          
+          {% else %}
+          ❌ Failed to get token
+          Status: {{ token_response.status }}
+          Response: {{ token_response.json | default('No response') }}
+          {% endif %}
+      when: token_response is defined
+    
+    - name: Save token to file
+      copy:
+        content: |
+          # AAP OAuth2 Token
+          # Created: {{ ansible_date_time.iso8601 }}
+          # Expires in: {{ token_response.json.expires_in }} seconds
+          
+          aap_api_token: "{{ token_response.json.access_token }}"
+        dest: /tmp/aap-token.yml
+        mode: '0600'
+      when: token_response.status == 200
+

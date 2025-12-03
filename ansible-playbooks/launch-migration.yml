@@ -1,0 +1,164 @@
+---
+# Launch VM Migration Job in AAP
+# This playbook triggers the migration job template created by migration-setup.yml
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts-<guid>.yml launch-migration.yml
+#
+# Options:
+#   -e "wait_for_completion=true"   # Wait for migration to complete
+#   -e "job_timeout=3600"            # Timeout in seconds (default: 3600)
+
+- name: Launch VM Migration in AAP
+  hosts: bastion
+  become: false
+  gather_facts: false
+  vars_files:
+    - vars/main.yml
+    - vars/migration.yml
+  vars:
+    wait_for_completion: "{{ wait_for_completion | default(false) }}"
+    job_timeout: "{{ job_timeout | default(3600) }}"
+  
+  tasks:
+    - name: Get AAP admin password from secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ aap_instance_name }}-admin-password"
+        namespace: "{{ aap_namespace }}"
+      register: aap_admin_secret
+
+    - name: Decode AAP admin password
+      set_fact:
+        aap_admin_password: "{{ aap_admin_secret.resources[0].data.password | b64decode }}"
+      when: aap_admin_secret.resources | length > 0
+
+    - name: Get AAP Controller route
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ aap_namespace }}"
+      register: aap_routes
+
+    - name: Extract AAP Controller URL
+      set_fact:
+        aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*gateway.*') | list | first).spec.host }}"
+      when: aap_routes.resources | length > 0
+
+    - name: Get HAproxy VM Migration job template
+      uri:
+        url: "{{ aap_controller_url }}/api/v2/job_templates/?name=Windows+VM+Migration"
+        method: GET
+        user: admin
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: job_template_query
+
+    - name: Verify job template exists
+      fail:
+        msg: "Job template 'HAproxy VM Migration' not found. Please run migration-setup.yml first."
+      when: job_template_query.json.results | length == 0
+
+    - name: Set job template ID
+      set_fact:
+        job_template_id: "{{ job_template_query.json.results[0].id }}"
+
+    - name: Display migration information
+      debug:
+        msg: |
+          ========================================
+          Launching VM Migration
+          ========================================
+          Job Template: HAproxy VM Migration (ID: {{ job_template_id }})
+          AAP Controller: {{ aap_controller_url }}
+          Wait for completion: {{ wait_for_completion }}
+          {% if wait_for_completion %}
+          Timeout: {{ job_timeout }} seconds
+          {% endif %}
+          ========================================
+
+    - name: Launch migration job template
+      uri:
+        url: "{{ aap_controller_url }}/api/v2/job_templates/{{ job_template_id }}/launch/"
+        method: POST
+        user: admin
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        status_code: [201]
+      register: job_launch
+
+    - name: Set job ID
+      set_fact:
+        job_id: "{{ job_launch.json.id }}"
+
+    - name: Display job launch information
+      debug:
+        msg: |
+          ========================================
+          Migration Job Launched Successfully!
+          ========================================
+          Job ID: {{ job_id }}
+          Job URL: {{ aap_controller_url }}/#/jobs/playbook/{{ job_id }}/output
+          
+          {% if not wait_for_completion %}
+          Monitor the job in AAP web UI or check status with:
+          curl -k -u admin:'{{ aap_admin_password }}' \
+            {{ aap_controller_url }}/api/v2/jobs/{{ job_id }}/
+          {% endif %}
+          ========================================
+
+    - name: Wait for migration job to complete
+      uri:
+        url: "{{ aap_controller_url }}/api/v2/jobs/{{ job_id }}/"
+        method: GET
+        user: admin
+        password: "{{ aap_admin_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: job_status
+      until: job_status.json.status in ['successful', 'failed', 'error', 'canceled']
+      retries: "{{ (job_timeout | int / 10) | int }}"
+      delay: 10
+      when: wait_for_completion | bool
+
+    - name: Display final job status
+      debug:
+        msg: |
+          ========================================
+          Migration Job Status: {{ job_status.json.status | upper }}
+          ========================================
+          Job ID: {{ job_id }}
+          Job Name: {{ job_status.json.name }}
+          Started: {{ job_status.json.started }}
+          Finished: {{ job_status.json.finished }}
+          Elapsed: {{ job_status.json.elapsed }} seconds
+          
+          {% if job_status.json.status == 'successful' %}
+          ✓ Migration completed successfully!
+          
+          Next steps:
+          1. Verify VM in OpenStack Horizon dashboard
+          2. Check VM console access
+          3. Test VM connectivity
+          {% elif job_status.json.status == 'failed' %}
+          ✗ Migration failed!
+          
+          View job output at:
+          {{ aap_controller_url }}/#/jobs/playbook/{{ job_id }}/output
+          
+          Check logs for errors and retry if needed.
+          {% endif %}
+          ========================================
+      when: wait_for_completion | bool
+
+    - name: Fail if job failed
+      fail:
+        msg: "Migration job failed. Check job output at {{ aap_controller_url }}/#/jobs/playbook/{{ job_id }}/output"
+      when: 
+        - wait_for_completion | bool
+        - job_status.json.status in ['failed', 'error']
+

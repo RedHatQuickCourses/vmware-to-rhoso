@@ -31,22 +31,7 @@ If needed, you can navigate to the OpenShift console URL: {openshift_cluster_con
 
 == Quick Start
 
-=== 1. Clone and Setup
-
-From your bastion, clone the repository:
-
-[source,bash,role=execute,subs=attributes]
-----
-# Clone the repository
-git clone https://github.com/RedHatQuickCourses/vmware-to-rhoso labrepo
-cd labrepo/ansible-playbooks
-
-# Copy and configure inventory
-cp inventory/hosts-migration.yml.example inventory/hosts-migration-{guid}.yml
-cp credentials.yml.example credentials.yml
-----
-
-=== 2. Configure Inventory
+=== Configure Inventory
 
 Edit `inventory/hosts-{guid}.yml` with your environment details:
 
@@ -149,4 +134,19 @@ Execute the following command to deploy the migration setup:
 [source,bash,role=execute,subs=attributes]
 ----
 ./deploy-migration-setup.sh --inventory inventory/hosts-migration-{guid}.yml --credentials credentials.yml
+----
+
+=== Login to AAP and upload the license
+
+. Navigate to the AAP console at {aap_url}[{aap_url}^]
+. Login as admin using the password provided in the output of the deployment
+. Upload the license file
+
+=== Configure AAP for migration
+
+Execute the following command to configure AAP for migration:
+
+[source,bash,role=execute,subs=attributes]
+----
+./deploy-migration-setup.sh --inventory inventory/hosts-migration-{guid}.yml --credentials credentials.yml --configure-aap
 ----

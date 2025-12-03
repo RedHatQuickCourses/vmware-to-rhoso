@@ -46,7 +46,7 @@
         aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*gateway.*') | list | first).spec.host }}"
       when: aap_routes.resources | length > 0
 
-    - name: Get Windows VM Migration job template
+    - name: Get HAproxy VM Migration job template
       uri:
         url: "{{ aap_controller_url }}/api/v2/job_templates/?name=Windows+VM+Migration"
         method: GET
@@ -58,7 +58,7 @@
 
     - name: Verify job template exists
       fail:
-        msg: "Job template 'Windows VM Migration' not found. Please run migration-setup.yml first."
+        msg: "Job template 'HAproxy VM Migration' not found. Please run migration-setup.yml first."
       when: job_template_query.json.results | length == 0
 
     - name: Set job template ID
@@ -71,7 +71,7 @@
           ========================================
           Launching VM Migration
           ========================================
-          Job Template: Windows VM Migration (ID: {{ job_template_id }})
+          Job Template: HAproxy VM Migration (ID: {{ job_template_id }})
           AAP Controller: {{ aap_controller_url }}
           Wait for completion: {{ wait_for_completion }}
           {% if wait_for_completion %}

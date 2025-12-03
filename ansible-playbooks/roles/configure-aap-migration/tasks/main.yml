@@ -95,7 +95,7 @@
       4. Create hosts (conversion_host and migrator)
       5. Create execution environment
       6. Create project (vmware migration toolkit project)
-      7. Create job template (Windows VM Migration)
+      7. Create job template (HAproxy VM Migration)
       8. Copy the content of os_migrate_for_aap.yaml to the job template extra variables
       ========================================
 
@@ -165,7 +165,7 @@
       7. CREATE JOB TEMPLATE
          - Navigate to: Automation Execution → Templates
          - Click: Create Template → Create Job Template
-         - Name: Windows VM Migration
+         - Name: HAproxy VM Migration
          - Inventory: Conversion Host Inventory
          - Project: vmware migration toolkit project
          - Playbook: playbooks/migration.yml
@@ -176,7 +176,7 @@
       
       8. RUN THE MIGRATION
          - Navigate to: Automation Execution → Templates
-         - Locate: Windows VM Migration template
+         - Locate: HAproxy VM Migration template
          - Click: Rocket icon to launch the migration
       
       ========================================

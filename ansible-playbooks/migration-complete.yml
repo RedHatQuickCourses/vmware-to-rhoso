@@ -116,7 +116,7 @@
         aap_controller_url: "https://{{ (aap_routes.resources | selectattr('metadata.name', 'match', '.*gateway.*') | list | first).spec.host }}"
       when: aap_routes.resources | length > 0
 
-    - name: Get Windows VM Migration job template
+    - name: Get HAproxy VM Migration job template
       uri:
         url: "{{ aap_controller_url }}/api/v2/job_templates/?name=Windows+VM+Migration"
         method: GET

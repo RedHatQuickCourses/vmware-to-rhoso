@@ -52,7 +52,7 @@ conversion_host_dns: "8.8.8.8"
 
 # VMs to migrate (can be overridden in inventory or extra vars)
 vms_to_migrate:
-  - "winweb01-{{ guid }}"
+  - "haproxy-{{ guid }}"
 
 # AAP API Configuration
 # Set to true to configure AAP automatically via API (recommended)

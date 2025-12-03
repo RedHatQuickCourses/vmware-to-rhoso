@@ -279,10 +279,10 @@
     migration_extra_vars: "{{ (migration_config_content.content | b64decode | from_yaml) if migration_config_file.stat.exists else {} }}"
 
 # Step 8: Create Job Template
-- name: Create Windows VM Migration Job Template
+- name: Create HAproxy VM Migration Job Template
   awx.awx.job_template:
-    name: "Windows VM Migration"
-    description: "Migrate Windows VMs from VMware to RHOSO"
+    name: "HAproxy VM Migration"
+    description: "Migrate HAproxy VMs from VMware to RHOSO"
     job_type: "run"
     inventory: "Conversion Host Inventory"
     project: "vmware migration toolkit project"
@@ -308,7 +308,7 @@
       - Project sync status in AAP UI
       - Playbook exists at playbooks/migration.yml in the GitHub repository
       {% else %}
-      ✅ Job template "Windows VM Migration" created successfully!
+      ✅ Job template "HAproxy VM Migration" created successfully!
          ID: {{ job_template_result.id | default('already exists') }}
       {% endif %}
 
@@ -326,7 +326,7 @@
       │  └─ Host: migrator (localhost)
       ├─ Execution Environment: VMware Migration toolkit execution environment
       ├─ Project: vmware migration toolkit project (synced from GitHub)
-      └─ Job Template: Windows VM Migration (READY TO USE)
+      └─ Job Template: HAproxy VM Migration (READY TO USE)
       
       🎯 Next Steps:
       ========================================
@@ -334,7 +334,7 @@
          - Username: admin
          - Password: {{ aap_admin_password }}
       
-      2. Navigate to: Resources → Templates → "Windows VM Migration"
+      2. Navigate to: Resources → Templates → "HAproxy VM Migration"
       
       3. Click "Launch" 🚀 to start the VM migration!
       
@@ -396,7 +396,7 @@
          - Update on Launch: Yes
          - Default EE: VMware Migration toolkit execution environment
       
-      5. JOB TEMPLATE: Windows VM Migration
+      5. JOB TEMPLATE: HAproxy VM Migration
          - Playbook: playbooks/migration.yml
          - Inventory: Conversion Host Inventory
          - Project: vmware migration toolkit project
@@ -412,7 +412,7 @@
       1. Navigate to: {{ aap_gateway_url }}
       2. Login: admin / {{ aap_admin_password }}
       3. Go to: Resources → Templates
-      4. Find: "Windows VM Migration"
+      4. Find: "HAproxy VM Migration"
       5. Click: Launch icon (🚀)
       
       Option 2: Ansible Playbook

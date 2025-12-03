@@ -312,7 +312,7 @@ if [[ $OVERALL_STATUS -eq 0 ]]; then
         echo ""
         echo -e "${YELLOW}Next Steps:${NC}"
         echo "1. Access AAP Dashboard (URL shown in output above)"
-        echo "2. Navigate to: Resources → Templates → 'Windows VM Migration'"
+        echo "2. Navigate to: Resources → Templates → 'HAproxy VM Migration'"
         echo "3. Click: Launch 🚀"
         echo ""
     elif [[ "$DEPLOY_MIGRATION" == "true" ]]; then

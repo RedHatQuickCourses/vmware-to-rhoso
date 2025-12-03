@@ -120,7 +120,7 @@
              ansible-playbook -i inventory/hosts-<guid>.yml migration-setup.yml --tags configure-aap-for-migration
           
           3. LAUNCH MIGRATION:
-             - Navigate to: Resources → Templates → "Windows VM Migration"
+             - Navigate to: Resources → Templates → "HAproxy VM Migration"
              - Click: Launch 🚀
           
           ========================================

@@ -2,6 +2,81 @@
 # Install and Configure Ansible Automation Platform role
 # Based on install-aap-configure.adoc documentation
 
+# Pre-check: Determine if AAP is already installed
+- name: Check if AAP namespace exists
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Namespace
+    name: "{{ aap_namespace }}"
+  register: aap_namespace_check
+
+- name: Check for existing AnsibleAutomationPlatform CR
+  kubernetes.core.k8s_info:
+    api_version: aap.ansible.com/v1alpha1
+    kind: AnsibleAutomationPlatform
+    namespace: "{{ aap_namespace }}"
+  register: aap_cr_check
+  when: aap_namespace_check.resources | length > 0
+
+- name: Check if AAP pods are running
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ aap_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/operator-version"
+  register: aap_pods_check
+  when: 
+    - aap_namespace_check.resources | length > 0
+    - aap_cr_check.resources is defined
+    - aap_cr_check.resources | length > 0
+
+- name: Set AAP installation status fact
+  set_fact:
+    aap_already_installed: >-
+      {{
+        aap_namespace_check.resources | length > 0 and
+        aap_cr_check.resources is defined and
+        aap_cr_check.resources | length > 0 and
+        aap_pods_check.resources is defined and
+        (aap_pods_check.resources | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 10
+      }}
+    aap_existing_instance_name: "{{ (aap_cr_check.resources | first).metadata.name | default('') if (aap_cr_check.resources is defined and aap_cr_check.resources | length > 0) else '' }}"
+
+- name: Display AAP pre-check results
+  debug:
+    msg: |
+      ========================================
+      AAP Installation Pre-Check
+      ========================================
+      Namespace '{{ aap_namespace }}' exists: {{ aap_namespace_check.resources | length > 0 }}
+      AnsibleAutomationPlatform CR exists: {{ aap_cr_check.resources | default([]) | length > 0 }}
+      {% if aap_cr_check.resources is defined and aap_cr_check.resources | length > 0 %}
+      Existing instance name: {{ aap_existing_instance_name }}
+      {% endif %}
+      Running AAP pods: {{ (aap_pods_check.resources | default([]) | selectattr('status.phase', 'equalto', 'Running') | list | length) }}
+      AAP Already Installed: {{ aap_already_installed }}
+      ========================================
+
+- name: Skip installation if AAP is already running
+  debug:
+    msg: |
+      ✅ AAP is already installed and running in namespace '{{ aap_namespace }}'!
+      
+      Existing instance: {{ aap_existing_instance_name }}
+      Running pods: {{ (aap_pods_check.resources | selectattr('status.phase', 'equalto', 'Running') | list | length) }}
+      
+      Skipping AAP installation steps...
+      
+      To get AAP access info, run:
+        oc get route -n {{ aap_namespace }}
+        oc get secret -n {{ aap_namespace }} {{ aap_existing_instance_name }}-admin-password -o jsonpath='{.data.password}' | base64 -d
+  when: aap_already_installed | bool
+
+# ========================================
+# AAP Installation Steps (skipped if already installed)
+# ========================================
+
 - name: Create NFS StorageClass for AAP
   kubernetes.core.k8s:
     state: present
@@ -12,6 +87,7 @@
         name: nfs
       provisioner: kubernetes.io/no-provisioner
       reclaimPolicy: Delete
+  when: not aap_already_installed | bool
 
 - name: Create NFS PersistentVolume for AAP
   kubernetes.core.k8s:
@@ -33,6 +109,7 @@
         persistentVolumeReclaimPolicy: Delete
         storageClassName: nfs
         volumeMode: Filesystem
+  when: not aap_already_installed | bool
 
 - name: Create AAP namespace
   kubernetes.core.k8s:
@@ -40,6 +117,7 @@
     api_version: v1
     kind: Namespace
     state: present
+  when: not aap_already_installed | bool
 
 - name: Create AAP OperatorGroup
   kubernetes.core.k8s:
@@ -53,6 +131,7 @@
       spec:
         targetNamespaces:
           - "{{ aap_namespace }}"
+  when: not aap_already_installed | bool
 
 - name: Wait for OperatorGroup to be created
   kubernetes.core.k8s_info:
@@ -64,6 +143,7 @@
   until: operator_group.resources | length > 0
   retries: 10
   delay: 5
+  when: not aap_already_installed | bool
 
 - name: Subscribe to ansible-automation-platform-operator
   kubernetes.core.k8s:
@@ -80,6 +160,7 @@
         name: ansible-automation-platform-operator
         source: redhat-operators
         sourceNamespace: openshift-marketplace
+  when: not aap_already_installed | bool
 
 - name: Wait for AAP operator ClusterServiceVersion to be succeeded
   kubernetes.core.k8s_info:
@@ -93,6 +174,7 @@
     (aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | selectattr('status', 'defined') | selectattr('status.phase', 'defined') | list | first).status.phase == 'Succeeded'
   retries: 60
   delay: 10
+  when: not aap_already_installed | bool
 
 - name: Display AAP operator installation status
   debug:
@@ -100,6 +182,7 @@
       === AAP Operator Installation Status ===
       CSV Name: {{ (aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | list | first).metadata.name }}
       CSV Phase: {{ (aap_csv.resources | selectattr('metadata.name', 'match', '^aap-operator.*') | list | first).status.phase }}
+  when: not aap_already_installed | bool
 
 - name: Create AnsibleAutomationPlatform CR
   kubernetes.core.k8s:
@@ -123,6 +206,7 @@
           file_storage_size: 10Gi
         lightspeed:
           disabled: true
+  when: not aap_already_installed | bool
 
 - name: Wait for AAP pods to be running (this may take ~10 minutes)
   kubernetes.core.k8s_info:
@@ -137,12 +221,21 @@
     (aap_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 10
   retries: 120
   delay: 10
+  when: not aap_already_installed | bool
+
+# ========================================
+# AAP Access Information (works for both new and existing installations)
+# ========================================
+
+- name: Set effective AAP instance name
+  set_fact:
+    effective_aap_instance_name: "{{ aap_existing_instance_name if (aap_already_installed | bool and aap_existing_instance_name != '') else aap_instance_name }}"
 
 - name: Get AAP admin password
   kubernetes.core.k8s_info:
     api_version: v1
     kind: Secret
-    name: "{{ aap_instance_name }}-admin-password"
+    name: "{{ effective_aap_instance_name }}-admin-password"
     namespace: "{{ aap_namespace }}"
   register: aap_admin_secret
 
@@ -163,25 +256,45 @@
     aap_gateway_route: "{{ aap_routes.resources | selectattr('metadata.name', 'search', 'gateway|controller') | list }}"
   when: aap_routes.resources | length > 0
 
+- name: Find main AAP route (fallback)
+  set_fact:
+    aap_main_route: "{{ aap_routes.resources | selectattr('metadata.name', 'equalto', effective_aap_instance_name) | list }}"
+  when: 
+    - aap_routes.resources | length > 0
+    - (aap_gateway_route is not defined or aap_gateway_route | length == 0)
+
 - name: Extract AAP dashboard URL from route
   set_fact:
-    aap_dashboard_url: "https://{{ aap_gateway_route[0].spec.host }}"
+    aap_dashboard_url: "https://{{ (aap_gateway_route | first).spec.host }}"
   when: 
     - aap_routes.resources | length > 0
     - aap_gateway_route is defined
     - aap_gateway_route | length > 0
 
+- name: Extract AAP dashboard URL from main route (fallback)
+  set_fact:
+    aap_dashboard_url: "https://{{ (aap_main_route | first).spec.host }}"
+  when: 
+    - aap_dashboard_url is not defined
+    - aap_main_route is defined
+    - aap_main_route | length > 0
+
 - name: Set placeholder dashboard URL if no route found yet
   set_fact:
     aap_dashboard_url: "AAP route not yet available - check with: oc get routes -n {{ aap_namespace }}"
-  when: aap_gateway_route is not defined or aap_gateway_route | length == 0
+  when: aap_dashboard_url is not defined
 
 - name: Display AAP access information
   debug:
     msg: |
       ========================================
+      {% if aap_already_installed | bool %}
+      AAP Already Installed - Access Information
+      {% else %}
       AAP Installation Complete!
+      {% endif %}
       ========================================
+      Instance Name: {{ effective_aap_instance_name }}
       {% if aap_dashboard_url is defined and 'route not yet available' not in aap_dashboard_url %}
       Dashboard URL: {{ aap_dashboard_url }}
       {% else %}
@@ -189,13 +302,180 @@
       Check routes with: oc get routes -n {{ aap_namespace }}
       {% endif %}
       Username: admin
-      Password: {{ aap_admin_password }}
+      Password: {{ aap_admin_password | default('Use: oc get secret -n ' + aap_namespace + ' ' + effective_aap_instance_name + '-admin-password -o jsonpath="{.data.password}" | base64 -d') }}
       ========================================
+      {% if not aap_already_installed | bool %}
       {% if aap_dashboard_url is defined and 'route not yet available' not in aap_dashboard_url %}
       Please navigate to the URL and complete the AAP subscription setup.
       {% else %}
       Wait a few moments for routes to be created, then check:
       oc get routes -n {{ aap_namespace }}
       {% endif %}
+      {% else %}
+      AAP installation was skipped (already installed).
+      {% endif %}
+      ========================================
+
+# ========================================
+# AutomationHub Installation (separate CR required in AAP 2.5)
+# ========================================
+
+- name: Check for existing AutomationHub CR
+  kubernetes.core.k8s_info:
+    api_version: automationhub.ansible.com/v1beta1
+    kind: AutomationHub
+    namespace: "{{ aap_namespace }}"
+  register: hub_cr_check
+
+- name: Check if Hub pods are running
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ aap_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/managed-by=automationhub-operator"
+  register: hub_pods_check
+  when: hub_cr_check.resources | length > 0
+
+- name: Set Hub installation status fact
+  set_fact:
+    hub_already_installed: >-
+      {{
+        hub_cr_check.resources | length > 0 and
+        hub_pods_check.resources is defined and
+        (hub_pods_check.resources | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 4
+      }}
+    hub_existing_instance_name: "{{ (hub_cr_check.resources | first).metadata.name | default('') if (hub_cr_check.resources | length > 0) else '' }}"
+
+- name: Display Hub pre-check results
+  debug:
+    msg: |
+      ========================================
+      AutomationHub Installation Pre-Check
+      ========================================
+      AutomationHub CR exists: {{ hub_cr_check.resources | length > 0 }}
+      {% if hub_cr_check.resources | length > 0 %}
+      Existing Hub instance: {{ hub_existing_instance_name }}
+      {% endif %}
+      Running Hub pods: {{ (hub_pods_check.resources | default([]) | selectattr('status.phase', 'equalto', 'Running') | list | length) }}
+      Hub Already Installed: {{ hub_already_installed }}
+      ========================================
+
+- name: Skip Hub installation if already running
+  debug:
+    msg: |
+      ✅ AutomationHub is already installed and running!
+      
+      Existing instance: {{ hub_existing_instance_name }}
+      Running pods: {{ (hub_pods_check.resources | selectattr('status.phase', 'equalto', 'Running') | list | length) }}
+      
+      Skipping Hub installation steps...
+  when: hub_already_installed | bool
+
+# Create AutomationHub CR if not present
+- name: Create AutomationHub CR
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: automationhub.ansible.com/v1beta1
+      kind: AutomationHub
+      metadata:
+        name: "{{ effective_aap_instance_name }}-hub"
+        namespace: "{{ aap_namespace }}"
+      spec:
+        file_storage_storage_class: nfs
+        file_storage_size: 10Gi
+        storage_type: file
+  when: not hub_already_installed | bool
+  register: hub_cr_created
+
+- name: Wait for Hub pods to be running (this may take ~5 minutes)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ aap_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/managed-by=automationhub-operator"
+  register: hub_pods
+  until: >
+    hub_pods.resources | length >= 4 and
+    (hub_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length) >= 4
+  retries: 60
+  delay: 10
+  when: not hub_already_installed | bool
+
+- name: Wait for AutomationHub to be fully ready
+  kubernetes.core.k8s_info:
+    api_version: automationhub.ansible.com/v1beta1
+    kind: AutomationHub
+    namespace: "{{ aap_namespace }}"
+  register: hub_status_check
+  until: >
+    hub_status_check.resources | length > 0 and
+    hub_status_check.resources[0].status is defined and
+    hub_status_check.resources[0].status.conditions is defined and
+    (hub_status_check.resources[0].status.conditions | selectattr('type', 'equalto', 'Automationhub-Operator-Finished-Execution') | selectattr('status', 'equalto', 'True') | list | length) > 0
+  retries: 30
+  delay: 10
+  when: not hub_already_installed | bool
+
+# ========================================
+# Hub Access Information
+# ========================================
+
+- name: Set effective Hub instance name
+  set_fact:
+    effective_hub_instance_name: "{{ hub_existing_instance_name if (hub_already_installed | bool and hub_existing_instance_name != '') else (effective_aap_instance_name + '-hub') }}"
+
+- name: Get Hub admin password
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ effective_hub_instance_name }}-admin-password"
+    namespace: "{{ aap_namespace }}"
+  register: hub_admin_secret
+
+- name: Decode Hub admin password
+  set_fact:
+    hub_admin_password: "{{ hub_admin_secret.resources[0].data.password | b64decode }}"
+  when: hub_admin_secret.resources | length > 0
+
+- name: Get Hub route
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: "{{ effective_hub_instance_name }}"
+    namespace: "{{ aap_namespace }}"
+  register: hub_route
+
+- name: Set Hub URL
+  set_fact:
+    hub_dashboard_url: "https://{{ hub_route.resources[0].spec.host }}"
+  when: hub_route.resources | length > 0
+
+- name: Set placeholder Hub URL if no route found
+  set_fact:
+    hub_dashboard_url: "Hub route not yet available - check with: oc get routes -n {{ aap_namespace }}"
+  when: hub_route.resources | length == 0
+
+- name: Display Hub access information
+  debug:
+    msg: |
+      ========================================
+      {% if hub_already_installed | bool %}
+      AutomationHub Already Installed - Access Information
+      {% else %}
+      AutomationHub Installation Complete!
+      {% endif %}
+      ========================================
+      Instance Name: {{ effective_hub_instance_name }}
+      {% if hub_dashboard_url is defined and 'route not yet available' not in hub_dashboard_url %}
+      Hub URL: {{ hub_dashboard_url }}
+      {% else %}
+      Hub URL: Routes are still being created...
+      Check routes with: oc get routes -n {{ aap_namespace }} | grep hub
+      {% endif %}
+      Username: admin
+      Password: {{ hub_admin_password | default('Use: oc get secret -n ' + aap_namespace + ' ' + effective_hub_instance_name + '-admin-password -o jsonpath="{.data.password}" | base64 -d') }}
       ========================================
 

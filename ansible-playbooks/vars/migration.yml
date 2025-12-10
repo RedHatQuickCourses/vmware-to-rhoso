@@ -5,7 +5,7 @@
 # AAP Configuration
 aap_namespace: "aap"
 aap_channel: "stable-2.5"
-aap_instance_name: "aap-for-rhoso-migrations"
+aap_instance_name: "aap"
 
 # Ansible Builder Configuration
 ansible_builder_work_dir: "ansible-builder-workspace"

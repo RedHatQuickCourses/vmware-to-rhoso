@@ -6,7 +6,7 @@
   gather_facts: false
   vars:
     # Update these values for your environment
-    aap_controller_url: "https://aap-for-rhoso-migrations-controller-aap.apps.cluster-<guid>.dynamic.redhatworkshops.io"
+    aap_controller_url: "https://aap-controller-aap.apps.cluster-<guid>.dynamic.redhatworkshops.io"
     aap_admin_password: "<your-admin-password>"
   
   tasks:

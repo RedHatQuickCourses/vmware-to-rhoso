@@ -113,7 +113,7 @@ cat << EOF | oc apply -f -
 apiVersion: aap.ansible.com/v1alpha1
 kind: AnsibleAutomationPlatform
 metadata:
-  name: aap-for-rhoso-migrations
+  name: aap
   namespace: aap
 spec:
   # Platform
@@ -151,26 +151,26 @@ oc get pods -n aap
 .Sample Output
 ----
 NAME                                                              READY   STATUS      RESTARTS   AGE
-aap-for-rhoso-migrations-controller-migration-4.6.8-kls8d         0/1     Completed   0          8m23s
-aap-for-rhoso-migrations-controller-task-78d76d4596-mn8vc         4/4     Running     0          9m7s
-aap-for-rhoso-migrations-controller-web-86f9d988-cvc8h            3/3     Running     0          9m9s
-aap-for-rhoso-migrations-eda-activation-worker-59fd79b5c9-d6vcb   1/1     Running     0          9m32s
-aap-for-rhoso-migrations-eda-activation-worker-59fd79b5c9-hdg92   1/1     Running     0          9m32s
-aap-for-rhoso-migrations-eda-api-864755bcc8-sk87f                 3/3     Running     0          9m34s
-aap-for-rhoso-migrations-eda-default-worker-7d54fdb44c-9ngrc      1/1     Running     0          9m33s
-aap-for-rhoso-migrations-eda-default-worker-7d54fdb44c-dn8xm      1/1     Running     0          9m33s
-aap-for-rhoso-migrations-eda-event-stream-674db468c7-c9xxd        2/2     Running     0          9m29s
-aap-for-rhoso-migrations-eda-scheduler-99dccf864-n7nzc            1/1     Running     0          9m31s
-aap-for-rhoso-migrations-eda-scheduler-99dccf864-skzdj            1/1     Running     0          9m31s
-aap-for-rhoso-migrations-gateway-d9894b76f-dcfn4                  2/2     Running     0          11m
-aap-for-rhoso-migrations-hub-api-668b966979-vb8lq                 1/1     Running     0          9m1s
-aap-for-rhoso-migrations-hub-content-745c569598-47vs9             1/1     Running     0          9m16s
-aap-for-rhoso-migrations-hub-content-745c569598-cdnc4             1/1     Running     0          9m16s
-aap-for-rhoso-migrations-hub-redis-655c475d7c-p5ftl               1/1     Running     0          9m25s
-aap-for-rhoso-migrations-hub-web-57d489786-d5wbt                  1/1     Running     0          9m30s
-aap-for-rhoso-migrations-hub-worker-878857467-g687h               1/1     Running     0          9m11s
-aap-for-rhoso-migrations-postgres-15-0                            1/1     Running     0          12m
-aap-for-rhoso-migrations-redis-0                                  1/1     Running     0          12m
+aap-controller-migration-4.6.8-kls8d         0/1     Completed   0          8m23s
+aap-controller-task-78d76d4596-mn8vc         4/4     Running     0          9m7s
+aap-controller-web-86f9d988-cvc8h            3/3     Running     0          9m9s
+aap-eda-activation-worker-59fd79b5c9-d6vcb   1/1     Running     0          9m32s
+aap-eda-activation-worker-59fd79b5c9-hdg92   1/1     Running     0          9m32s
+aap-eda-api-864755bcc8-sk87f                 3/3     Running     0          9m34s
+aap-eda-default-worker-7d54fdb44c-9ngrc      1/1     Running     0          9m33s
+aap-eda-default-worker-7d54fdb44c-dn8xm      1/1     Running     0          9m33s
+aap-eda-event-stream-674db468c7-c9xxd        2/2     Running     0          9m29s
+aap-eda-scheduler-99dccf864-n7nzc            1/1     Running     0          9m31s
+aap-eda-scheduler-99dccf864-skzdj            1/1     Running     0          9m31s
+aap-gateway-d9894b76f-dcfn4                  2/2     Running     0          11m
+aap-hub-api-668b966979-vb8lq                 1/1     Running     0          9m1s
+aap-hub-content-745c569598-47vs9             1/1     Running     0          9m16s
+aap-hub-content-745c569598-cdnc4             1/1     Running     0          9m16s
+aap-hub-redis-655c475d7c-p5ftl               1/1     Running     0          9m25s
+aap-hub-web-57d489786-d5wbt                  1/1     Running     0          9m30s
+aap-hub-worker-878857467-g687h               1/1     Running     0          9m11s
+aap-postgres-15-0                            1/1     Running     0          12m
+aap-redis-0                                  1/1     Running     0          12m
 aap-gateway-operator-controller-manager-55fd699d8b-ddz9z          2/2     Running     0          66m
 ansible-lightspeed-operator-controller-manager-7cdf859495-hlnct   2/2     Running     0          66m
 automation-controller-operator-controller-manager-6c5989994dg8m   2/2     Running     0          66m
@@ -183,7 +183,7 @@ Get the secret to access AAP dashboard:
 
 [source,bash,role=execute]
 ----
-oc get secret/aap-for-rhoso-migrations-admin-password -o jsonpath={.data.password} -n aap | base64 --decode ; echo
+oc get secret/aap-admin-password -o jsonpath={.data.password} -n aap | base64 --decode ; echo
 ----
 
 Get the route to access AAP dashboard:
@@ -195,7 +195,7 @@ oc get routes -n aap
 The URL of your AAP dashboard is:
 [source,bash,role=execute,subs=attributes]
 ----
-aap-for-rhoso-migrations-aap.apps.cluster-{guid}.dynamic.redhatworkshops.io
+aap-aap.apps.cluster-{guid}.dynamic.redhatworkshops.io
 ----
 
 Navigate that URL with your browser and finish the Ansible Automation Platform by subscribing the AAP.

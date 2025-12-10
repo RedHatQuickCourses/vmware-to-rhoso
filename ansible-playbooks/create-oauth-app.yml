@@ -10,7 +10,7 @@
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Secret
-        name: aap-for-rhoso-migrations-admin-password
+        name: aap-admin-password
         namespace: aap
       register: aap_secret
     
@@ -32,7 +32,7 @@
     - name: Try creating OAuth2 application using django admin
       ansible.builtin.shell: |
         oc exec -n aap \
-          deployment/aap-for-rhoso-migrations-controller-web -- \
+          deployment/aap-controller-web -- \
           awx-manage shell << 'PYEOF'
         from django.contrib.auth.models import User
         from oauth2_provider.models import Application
